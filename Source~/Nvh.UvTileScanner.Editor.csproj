@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Nvh.UvTileScanner.Editor</AssemblyName>
+    <RootNamespace>Nvh.UvTileScanner</RootNamespace>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <UnityEditorDir Condition="'$(UnityEditorDir)' == ''">$(UNITY_EDITOR_DIR)</UnityEditorDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UnityEditorDir)' == ''">
+    <UnityPathMissing>true</UnityPathMissing>
+  </PropertyGroup>
+
+  <Target Name="RequireUnityEditorDir" BeforeTargets="ResolveReferences" Condition="'$(UnityEditorDir)' == ''">
+    <Error Text="Set UnityEditorDir to the Unity Editor/Data directory (for example: dotnet build -p:UnityEditorDir=/path/to/Editor/Data)." />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="UvTileScannerWindow.cs" />
+
+    <ProjectReference Include="Nvh.UvTileScanner.Core.Editor.csproj" Private="false" />
+
+    <!-- Compile against Unity's facade assemblies so type forwarding remains
+         compatible when UI Toolkit types move between modules across LTS versions. -->
+    <Reference Include="UnityEditor">
+      <HintPath>$(UnityEditorDir)/Managed/UnityEditor.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(UnityEditorDir)/Managed/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

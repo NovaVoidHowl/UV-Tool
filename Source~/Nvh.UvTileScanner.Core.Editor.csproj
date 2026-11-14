@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Nvh.UvTileScanner.Core.Editor</AssemblyName>
+    <RootNamespace>Nvh.UvTileScanner</RootNamespace>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <UnityEditorDir Condition="'$(UnityEditorDir)' == ''">$(UNITY_EDITOR_DIR)</UnityEditorDir>
+  </PropertyGroup>
+  <Target Name="RequireUnityEditorDir" BeforeTargets="ResolveReferences" Condition="'$(UnityEditorDir)' == ''">
+    <Error Text="Set UnityEditorDir to the Unity Editor/Data directory." />
+  </Target>
+  <ItemGroup>
+    <Compile Include="UvTileScanner.cs" />
+    <Compile Include="Core/**/*.cs" />
+    <Reference Include="UnityEditor"><HintPath>$(UnityEditorDir)/Managed/UnityEditor.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(UnityEditorDir)/Managed/UnityEngine.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

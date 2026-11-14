@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <ui:VisualElement class="window-root">
+        <ui:VisualElement class="header">
+            <ui:Label text="UV Tile Scanner" class="title" />
+            <ui:Label text="Inspect mesh UV tiles, material assignments, shaders, and supported shader tile features."
+                      class="subtitle" />
+            <ui:Label name="tool-version" class="version-badge" />
+        </ui:VisualElement>
+
+        <ui:VisualElement class="input-section section">
+            <uie:ObjectField name="avatar-root-field" label="Avatar root" />
+            <ui:Toggle name="include-inactive-toggle" label="Include inactive" value="true" />
+            <ui:Toggle name="whole-project-animations-toggle" label="Search whole project for animations" value="false" />
+            <ui:VisualElement name="scan-progress" class="scan-progress">
+                <ui:Label name="scan-progress-label" class="scan-progress-label" />
+                <ui:ProgressBar name="scan-progress-bar" class="scan-progress-bar" value="0" />
+                <ui:Button name="cancel-scan-button" text="Cancel scan" class="cancel-scan-button" />
+            </ui:VisualElement>
+            <ui:VisualElement class="button-row">
+                <ui:Button name="scan-button" text="Scan avatar" class="primary-button" />
+                <ui:Button name="clear-button" text="Clear" class="clear-button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <ui:VisualElement name="empty-state" class="message-box empty-state">
+            <ui:Label name="empty-state-message" class="wrap-text" />
+        </ui:VisualElement>
+
+        <ui:VisualElement name="report-content" class="report-content">
+            <ui:VisualElement name="summary" class="summary section">
+                <ui:Label name="summary-title" class="summary-title" />
+                <ui:Label name="summary-counts" class="summary-counts wrap-text" />
+                <ui:Label name="missing-meshes-warning" class="message-box message-warning wrap-text" />
+            </ui:VisualElement>
+
+            <ui:VisualElement name="animation-filter-toolbar" class="animation-filter section">
+                <ui:Label text="Animation analysis filter" class="animation-filter-title" />
+                <ui:VisualElement class="animation-filter-row">
+                    <ui:DropdownField name="animation-category-filter" label="Properties" class="animation-category-filter" />
+                    <uie:ToolbarSearchField name="animation-search-field" class="animation-search-field" />
+                </ui:VisualElement>
+                <ui:Label name="animation-filter-counts" class="animation-filter-counts wrap-text" />
+            </ui:VisualElement>
+
+            <uie:Toolbar class="filter-toolbar">
+                <ui:Toggle name="multiple-tiles-toggle" text="Multiple tiles only" class="filter-toggle" />
+                <ui:VisualElement class="toolbar-spacer" />
+                <uie:ToolbarSearchField name="search-field" class="search-field" />
+            </uie:Toolbar>
+
+            <ui:ScrollView name="results-scroll" class="results-scroll">
+                <ui:VisualElement name="animation-results" class="animation-results" />
+                <ui:VisualElement name="results" class="results" />
+            </ui:ScrollView>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

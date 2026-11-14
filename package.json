@@ -1,0 +1,18 @@
+{
+  "name": "uk.novavoidhowl.dev.uv-tile-scanner",
+  "version": "1.5.1",
+  "displayName": "UV Tile Scanner",
+  "description": "Editor tool that audits avatar mesh UV tiles, materials, shaders, animation bindings, and modular shader tile features including Poiyomi.",
+  "unity": "2021.3",
+  "keywords": [
+    "avatar",
+    "mesh",
+    "uv",
+    "udim",
+    "editor"
+  ],
+  "author": {
+    "name": "NovaVoidHowl"
+  },
+  "type": "tool"
+}

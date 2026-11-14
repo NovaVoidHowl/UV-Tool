@@ -1,0 +1,17 @@
+{
+  "name": "Nvh.UvTileScanner.Tests",
+  "references": [],
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Nvh.UvTileScanner.Core.Editor.dll",
+    "Nvh.UvTileScanner.Poiyomi.Editor.dll",
+    "Nvh.UvTileScanner.Editor.dll"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": false
+}

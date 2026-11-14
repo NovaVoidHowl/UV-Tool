@@ -1,0 +1,13 @@
+Source~/bin/
+Source~/obj/
+.dotnet/
+.nuget/
+/build.config.mk
+ValidationProject*/
+validation-*-create.log
+test-results*.xml
+test-run*.log
+*.pdb
+*.user
+.idea/
+.vscode/
