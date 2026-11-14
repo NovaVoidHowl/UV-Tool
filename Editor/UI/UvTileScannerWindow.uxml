@@ -34,6 +34,19 @@
                 <ui:Label name="missing-meshes-warning" class="message-box message-warning wrap-text" />
             </ui:VisualElement>
 
+            <ui:Foldout name="conversion-section" text="YAML geometry conversion" value="false" class="conversion-section section">
+                <ui:Label text="Export a factual template from this scan, then review and assign semantic feature ownership in YAML before converting."
+                          class="wrap-text conversion-description" />
+                <uie:ObjectField name="conversion-config-field" label="YAML configuration" />
+                <ui:VisualElement class="conversion-button-row">
+                    <ui:Button name="export-yaml-button" text="Export template" />
+                    <ui:Button name="validate-config-button" text="Validate" />
+                    <ui:Button name="dry-run-button" text="Dry run" />
+                    <ui:Button name="run-conversion-button" text="Convert avatar" class="primary-button conversion-run-button" />
+                </ui:VisualElement>
+                <ui:VisualElement name="conversion-status" class="conversion-status" />
+            </ui:Foldout>
+
             <ui:VisualElement name="animation-filter-toolbar" class="animation-filter section">
                 <ui:Label text="Animation analysis filter" class="animation-filter-title" />
                 <ui:VisualElement class="animation-filter-row">

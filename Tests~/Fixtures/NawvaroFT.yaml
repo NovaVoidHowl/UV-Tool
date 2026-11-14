@@ -1,0 +1,48 @@
+schemaVersion: 1
+avatar:
+  name: "Nawvaro FT"
+geometryGroups:
+  - id: "base-shared"
+    renderer: "Base"
+    materialSlots: [0]
+    uvChannel: 1
+    tiles: [1001]
+  - id: "base-furry"
+    renderer: "Base"
+    materialSlots: [0]
+    uvChannel: 1
+    tiles: [1002, 1012]
+  - id: "base-human"
+    renderer: "Base"
+    materialSlots: [0]
+    uvChannel: 1
+    tiles: [1003, 1013]
+  - id: "base-horns"
+    renderer: "Base"
+    materialSlots: [1]
+    uvChannel: 1
+    tiles: [1004, 1014]
+features:
+  - id: "body-mode"
+    type: exclusive
+    defaultState: "furry"
+    ownedGroups: ["base-furry", "base-human"]
+    states:
+      - id: "furry"
+        visibleGroups: ["base-furry"]
+      - id: "human"
+        visibleGroups: ["base-human"]
+  - id: "horns"
+    type: toggle
+    defaultState: "on"
+    ownedGroups: ["base-horns"]
+    states:
+      - id: "on"
+        visibleGroups: ["base-horns"]
+      - id: "off"
+        visibleGroups: []
+settings:
+  outputDirectory: "Assets/UVTileScannerOutput"
+  generatePreview: false
+  unassignedGeometry: preserve
+  triangleBoundaries: reject

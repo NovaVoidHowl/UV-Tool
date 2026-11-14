@@ -25,6 +25,7 @@ fi
 
 projects=(
   "Nvh.UvTileScanner.Core.Editor"
+  "Nvh.UvTileScanner.Conversion.Editor"
   "Nvh.UvTileScanner.Poiyomi.Editor"
   "Nvh.UvTileScanner.Editor"
 )
@@ -37,3 +38,12 @@ for project in "${projects[@]}"; do
     "${package_dir}/Editor/${project}.dll"
   echo "Built ${package_dir}/Editor/${project}.dll"
 done
+
+yaml_dotnet_dll="${NUGET_PACKAGES}/yamldotnet/18.1.0/lib/netstandard2.1/YamlDotNet.dll"
+if [[ ! -f "${yaml_dotnet_dll}" ]]; then
+  echo "Pinned YamlDotNet dependency was not restored: ${yaml_dotnet_dll}" >&2
+  exit 2
+fi
+cp "${yaml_dotnet_dll}" "${package_dir}/Editor/YamlDotNet.dll"
+chmod 0644 "${package_dir}/Editor/YamlDotNet.dll"
+echo "Copied ${package_dir}/Editor/YamlDotNet.dll"

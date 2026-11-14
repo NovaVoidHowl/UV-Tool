@@ -4,8 +4,10 @@
   "overrideReferences": true,
   "precompiledReferences": [
     "Nvh.UvTileScanner.Core.Editor.dll",
+    "Nvh.UvTileScanner.Conversion.Editor.dll",
     "Nvh.UvTileScanner.Poiyomi.Editor.dll",
-    "Nvh.UvTileScanner.Editor.dll"
+    "Nvh.UvTileScanner.Editor.dll",
+    "YamlDotNet.dll"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"

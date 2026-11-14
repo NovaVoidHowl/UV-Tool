@@ -1,8 +1,8 @@
 # UV Tile Scanner
 
-UV Tile Scanner is an Editor-only Unity package for auditing avatar meshes, UV tiles, renderer material assignments, and shader-specific UV discard/dissolve settings. It scans a selected GameObject hierarchy without modifying the avatar, meshes, materials, shaders, or animations.
+UV Tile Scanner is an Editor-only Unity package for auditing avatar meshes, UV tiles, renderer material assignments, shader-specific UV discard/dissolve settings, and material animation bindings. It can also use an explicit YAML configuration to partition source triangles into geometry groups and create a non-destructive converted prefab plus a machine-readable manifest.
 
-The window uses UI Toolkit and is distributed as three compiled editor DLLs plus UXML and USS assets. Source, documentation, and tests remain available in folders ending in `~`, which Unity ignores when importing the package.
+The window uses UI Toolkit and is distributed as four compiled editor DLLs, the pinned YamlDotNet dependency, and UXML/USS assets. Source, documentation, samples, and tests remain available in folders ending in `~`, which Unity ignores when importing the package.
 
 ## Capabilities
 
@@ -21,6 +21,12 @@ The window uses UI Toolkit and is distributed as three compiled editor DLLs plus
 - Optionally searches every project animation clip, including sub-assets such as FBX clips, without treating unrelated assets as avatar-linked.
 - Provides searchable results, a multiple-tiles filter, mesh pinging, and a copyable text report per material.
 - Shows the installed tool version in an upper-right badge sourced from Unity Package Manager metadata.
+- Exports factual YAML templates from completed scans without inferring semantic avatar features.
+- Strictly validates versioned YAML, relative renderers, material slots, UV channels, UDIM selectors, group overlap, feature ownership, states, defaults, and output settings.
+- Classifies every triangle from all three UV corners and explicitly reports tile-spanning, unsupported, conflicting, or unassigned geometry.
+- Dry-runs expected renderer/group/material mappings and triangle/submesh counts without creating assets.
+- Clones meshes and repartitions only their submesh index lists, retaining source vertex attributes, shared vertices, skinning, blendshapes, bounds, winding, and material provenance.
+- Creates a cloned avatar prefab, new mesh assets, and a versioned JSON manifest without modifying source assets.
 
 ## Compatibility
 
@@ -30,23 +36,28 @@ The window uses UI Toolkit and is distributed as three compiled editor DLLs plus
 - Built-in render-pipeline shader inspection; no runtime component is installed
 - Mesh Read/Write does not need to be enabled because scanning uses Unity's read-only mesh data API
 
-The assemblies compile against Unity 2021.3. Automated Edit Mode validation is run with Unity 2022.3.58f1.
+The project retains its `netstandard2.1` build and Unity 2021.3 minimum-package declaration. The current automated compile and Edit Mode validation run uses Unity 2022.3.58f1; the older Editor baseline was not rerun for this release.
 
 ## Package layout
 
 | Path | Purpose |
 | --- | --- |
 | `Editor/Nvh.UvTileScanner.Core.Editor.dll` | Mesh scanner, result models, detector contract/registry, caching, and mesh/material correlation |
+| `Editor/Nvh.UvTileScanner.Conversion.Editor.dll` | Strict YAML models/parser, template exporter, validation, triangle planning, mesh output, prefab output, and manifest generation |
 | `Editor/Nvh.UvTileScanner.Editor.dll` | UI Toolkit EditorWindow |
 | `Editor/Nvh.UvTileScanner.Poiyomi.Editor.dll` | Optional Poiyomi detector with no mandatory Poiyomi dependency |
+| `Editor/YamlDotNet.dll` | Pinned YamlDotNet 18.1.0 parser dependency used only by the conversion assembly |
 | `Editor/UI/UvTileScannerWindow.uxml` | Editable window layout |
 | `Editor/UI/UvTileScannerWindow.uss` | Editable window styling |
 | `Source~` | C# source and DLL build projects; ignored by Unity package import |
 | `Tests~` | Edit Mode tests and synthetic shader fixtures; ignored by default |
 | `Documentation~` | Detector-extension and Poiyomi support details |
 | `Documentation~/AnimationAnalysis.md` | Animation discovery, binding matching, and generated-controller limitations |
+| `Documentation~/GeometryConversion.md` | YAML schema, workflow, classification policies, output manifest, and preview limitation |
+| `Samples~/Nawvaro FT/NawvaroFT.yaml` | Manually supplied first-milestone mapping for the Nawvaro FT `Base` renderer |
+| `Third Party Notices.md` | YamlDotNet version, source, and MIT licence notice |
 
-The UI DLL depends on the core DLL. The Poiyomi detector DLL can be omitted if Poiyomi analysis is not wanted; core mesh/material scanning and the UI continue to work. Keep the UXML and USS assets with the UI DLL—they are package assets, not embedded resources.
+The UI DLL depends on the core and conversion DLLs. The conversion DLL depends on core and `YamlDotNet.dll`. The Poiyomi detector DLL can be omitted if Poiyomi analysis is not wanted; scanning, YAML conversion, and the UI continue to work. Keep the UXML and USS assets with the UI DLL—they are package assets, not embedded resources.
 
 ## Installation and removal
 
@@ -58,7 +69,7 @@ Install using one of these approaches:
 
 Installing the complete package lets the version badge resolve the version directly from `package.json`. If the `Editor` directory is copied loose into `Assets`, scanning can still work, but Unity Package Manager cannot associate the assembly with its package and the badge will show **Version unavailable**.
 
-Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core DLL and the `Editor/UI` assets. To remove the tool, remove the package through Package Manager or delete its complete local package directory.
+Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core/conversion DLLs, YamlDotNet, and the `Editor/UI` assets. To remove the tool, remove the package through Package Manager or delete its complete local package directory.
 
 ## Using the scanner
 
@@ -72,6 +83,21 @@ Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core DLL and th
 8. Expand the avatar-wide **Animation analysis** section, then a clip and renderer/material target, to inspect properties, extracted values, keyframes, confidence, and source details.
 9. Expand **Shader analysis** or **Animation analysis** below a material to inspect feature/tile controls and matching curves under the same animation filters.
 10. Use **Copy** beside a material for a plain-text shader and animation report.
+
+### YAML geometry conversion
+
+After scanning, expand **YAML geometry conversion**:
+
+1. Select **Export template** and save a new `.yaml` asset. Existing files require explicit replacement confirmation.
+2. Review the factual renderer/material-slot/UV/tile groups. Give them deliberate IDs and define feature ownership/states; the exporter never derives meanings from names, shaders, or animations.
+3. Assign the YAML asset, then select **Validate** or **Dry run**. Both are read-only and show renderer/material mappings, group triangle counts, unassigned triangles, boundary diagnostics, and expected output submeshes.
+4. Select **Convert avatar** only after validation passes. Conversion creates uniquely named cloned meshes, a prefab, and a JSON manifest below `settings.outputDirectory` and pings the prefab.
+
+The schema uses zero-based Unity UV channels and standard UDIM mapping. Triangle classification considers all three corners, preserves shared vertices and material boundaries, and never silently deletes or duplicates source triangles. Unsupported topology, negative/out-of-range tiles, overlapping groups, conflicting feature ownership, invalid slots, and unsafe YAML are errors. Unmatched or boundary-ambiguous triangles follow the explicit YAML policies.
+
+See [YAML geometry conversion](Documentation~/GeometryConversion.md) for the complete schema, safety rules, and manifest. The included Nawvaro FT sample retains the supplied `Base` mappings; dry-run it against the actual selected asset before conversion. No additional avatar mappings are assumed.
+
+The Nawvaro file can also be imported through Package Manager's **Samples** section for this package, then selected as a `TextAsset` in the conversion UI.
 
 You can also right-click a selected hierarchy object and choose **Scan second UV tiles**.
 
@@ -187,9 +213,9 @@ The root `Makefile` provides the routine build, test, and package-version comman
 | `make init-config UNITY_DATA_DIR=/path/to/Editor/Data` | Create an ignored local file that remembers the Unity paths |
 | `make version` | Print the current version from `package.json` |
 | `make set-version VERSION=1.4.0` | Validate and update the `package.json` version |
-| `make build` | Build all three Editor DLLs into `Editor` |
+| `make build` | Build all four Editor DLLs and copy YamlDotNet into `Editor` |
 | `make rebuild` | Clean and rebuild all DLL projects |
-| `make clean` | Clean the three .NET build projects |
+| `make clean` | Clean the four .NET build projects |
 | `make sync-tests` | Refresh the tests and shader fixtures in the validation project |
 | `make test` | Build the DLLs, synchronize tests, and run all Edit Mode tests |
 | `make test-only` | Synchronize and run tests without rebuilding the DLLs |
@@ -228,7 +254,7 @@ Pass a Unity `Editor/Data` directory to the build script:
 ./scripts/build.sh /path/to/Unity/Hub/Editor/2022.3.x/Editor/Data
 ```
 
-Alternatively, set `UNITY_EDITOR_DIR` and run `./scripts/build.sh` without an argument. The script builds all three projects as deterministic `netstandard2.1` Editor assemblies and copies the distributable DLLs into `Editor`.
+Alternatively, set `UNITY_EDITOR_DIR` and run `./scripts/build.sh` without an argument. The script builds all four projects as deterministic `netstandard2.1` Editor assemblies and copies them plus YamlDotNet 18.1.0 into `Editor`.
 
 The build intentionally references Unity's managed facade assemblies to retain compatibility when types move between Unity modules across LTS versions. The Makefile delegates to this script for `build` and `rebuild`.
 
@@ -247,14 +273,20 @@ The build intentionally references Unity's managed facade assemblies to retain c
 - confirmed, probable, locked, unsupported, and missing-property Poiyomi cases;
 - exact, family-only, official-partial, official-exact, and unknown version paths;
 - separate UV-channel and material/submesh tile correlation.
+- strict YAML parsing/serialization and unsafe/unknown/duplicate/schema rejection;
+- renderer/UV/material resolution, UDIM conversion, seam and spanning-triangle classification;
+- overlaps, feature ownership/defaults, unassigned preservation, exact membership, shared vertices, and multiple materials;
+- cloned mesh skinning/blendshape/bounds preservation, non-destructive prefab output, manifest mappings, template export, detector independence, and scanner-report integration.
 
-The latest Unity 2022.3.58f1 Edit Mode run passes all 33 tests. The three assemblies also compile against Unity 2021.3.
+The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 45 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
 
 To run the suite with the checked-out validation project, use `make test` as described above. To run the tests in another project manually, copy `Tests~` into that project's `Assets` directory or temporarily remove the trailing `~` so Unity imports the test assembly and fixtures.
 
 ## Current limitations
 
-- The tool is an analyser only; it does not convert meshes or export Resonite assets.
+- Geometry conversion partitions meshes and emits a neutral manifest; it does not generate Resonite components, ProtoFlux, platform shaders, or publish avatars.
+- Schema v1 does not create separate toggleable preview renderers. `generatePreview: true` produces a warning, and the converted prefab retains all partitioned geometry visibly.
+- Only triangle submesh topology is converted. Other topology is rejected rather than rewritten.
 - Animation filter views contain bindings correlated with at least one scanned material slot. Unmatched raw project curves remain in the overall scan statistics but are not presented as material-property matches.
 - The primary mesh summary scans UV1. Other channels are scanned only when a detected shader feature selects them.
 - Primitive tile assignment uses UV centroids and reports boundary-crossing primitives for manual review.

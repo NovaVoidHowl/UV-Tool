@@ -1,15 +1,24 @@
 {
   "name": "uk.novavoidhowl.dev.uv-tile-scanner",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "displayName": "UV Tile Scanner",
-  "description": "Editor tool that audits avatar mesh UV tiles, materials, shaders, animation bindings, and modular shader tile features including Poiyomi.",
+  "description": "Editor tool that audits avatar UV tiles, materials, shaders and animations, then performs explicit YAML-driven non-destructive geometry partitioning.",
   "unity": "2021.3",
   "keywords": [
     "avatar",
     "mesh",
     "uv",
     "udim",
+    "yaml",
+    "conversion",
     "editor"
+  ],
+  "samples": [
+    {
+      "displayName": "Nawvaro FT Geometry Configuration",
+      "description": "Manually supplied schema-v1 Base renderer mapping for dry-run validation against a Nawvaro FT avatar.",
+      "path": "Samples~/Nawvaro FT"
+    }
   ],
   "author": {
     "name": "NovaVoidHowl"

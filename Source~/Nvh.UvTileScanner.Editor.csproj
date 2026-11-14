@@ -25,7 +25,17 @@
   <ItemGroup>
     <Compile Include="UvTileScannerWindow.cs" />
 
-    <ProjectReference Include="Nvh.UvTileScanner.Core.Editor.csproj" Private="false" />
+    <!-- These editor assemblies are built earlier by scripts/build.sh. Using
+         binary references here also avoids an MSBuild restore-graph ambiguity
+         caused by several SDK projects sharing the Source~ directory. -->
+    <Reference Include="Nvh.UvTileScanner.Core.Editor">
+      <HintPath>../Editor/Nvh.UvTileScanner.Core.Editor.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Nvh.UvTileScanner.Conversion.Editor">
+      <HintPath>../Editor/Nvh.UvTileScanner.Conversion.Editor.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
 
     <!-- Compile against Unity's facade assemblies so type forwarding remains
          compatible when UI Toolkit types move between modules across LTS versions. -->

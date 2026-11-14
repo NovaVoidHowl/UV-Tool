@@ -132,6 +132,42 @@
     opacity: 0.85;
 }
 
+.conversion-section {
+    padding: 6px;
+    margin-bottom: 5px;
+}
+
+.conversion-description {
+    margin: 3px 4px 5px 18px;
+    opacity: 0.82;
+}
+
+.conversion-button-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 4px 4px 2px 18px;
+}
+
+.conversion-button-row > Button {
+    min-width: 92px;
+    margin-right: 4px;
+}
+
+.conversion-run-button {
+    flex-grow: 1;
+}
+
+.conversion-status {
+    margin-left: 18px;
+    margin-right: 4px;
+}
+
+.message-info {
+    background-color: rgba(76, 145, 200, 0.10);
+    border-left-width: 3px;
+    border-left-color: rgb(76, 145, 200);
+}
+
 .animation-filter {
     padding: 6px;
     margin-bottom: 5px;

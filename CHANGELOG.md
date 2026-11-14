@@ -1,12 +1,23 @@
 # Changelog
 
+## 1.6.0 - 2026-11-14 - (plan H/A - Imp A)
+
+- Added a strict, versioned YAML schema and safe YamlDotNet 18.1.0 representation-model parser with duplicate-key, unknown-field, tag, anchor, and line/column diagnostics.
+- Added factual scan-to-YAML template export without semantic feature inference.
+- Added renderer/material-slot validation, corner-aware triangle/UDIM classification, explicit boundary and unassigned policies, and exact triangle-membership validation.
+- Added non-destructive mesh cloning and submesh partitioning that preserves vertex buffers, skinning, blendshapes, bounds, material provenance, and shared vertices.
+- Added cloned-avatar prefab output and a versioned JSON conversion manifest with persistent asset identities, submesh mappings, feature states, defaults, and diagnostics.
+- Added UI Toolkit actions for template export, YAML selection, validation, dry run, mapping inspection, and gated conversion.
+- Added the manually supplied Nawvaro FT `Base` example, schema/workflow documentation, dependency licence notices, and synthetic Edit Mode coverage.
+- Added a dedicated conversion assembly and packaged YamlDotNet dependency; no Poiyomi, VRChat, VRCFury, or Resonite dependency is introduced.
+
 ## 1.5.1 - 2026-11-08 - (plan H - Imp A)
 
 - Fixed nested per-material animation clip foldouts being immediately replaced by a bubbled parent foldout change event.
 - Kept binding details lazy while building lightweight filtered clip headers without a parent expansion callback.
 - Added a regression test covering nested material animation foldout expansion.
 
-## 1.5.0 - 2026-11-08 - (plan Animation - Imp A)
+## 1.5.0 - 2026-11-08 - (plan H - Imp A)
 
 - Added detector-neutral animation filters for UV controls, all matched material properties, and other material properties, defaulting to UV controls.
 - Added cached animation search across clips, renderers, materials, properties, feature names, and UDIM numbers without rescanning assets.

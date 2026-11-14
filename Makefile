@@ -16,6 +16,7 @@ UNITY_EXECUTABLE ?=
 
 PROJECTS := \
 	Source~/Nvh.UvTileScanner.Core.Editor.csproj \
+	Source~/Nvh.UvTileScanner.Conversion.Editor.csproj \
 	Source~/Nvh.UvTileScanner.Poiyomi.Editor.csproj \
 	Source~/Nvh.UvTileScanner.Editor.csproj
 
@@ -89,7 +90,7 @@ set-version: ## Update package.json; usage: make set-version VERSION=1.2.3.
 	trap - EXIT; \
 	echo "Updated package version: $$current_version -> $(VERSION)"
 
-build: require-unity-data ## Build all three Editor DLLs into Editor/.
+build: require-unity-data ## Build all four Editor DLLs and the YAML dependency into Editor/.
 	@"$(BUILD_SCRIPT)" "$(UNITY_DATA_DIR)"
 
 rebuild: clean ## Clean all projects and then rebuild every DLL.
@@ -103,9 +104,9 @@ clean: require-unity-data ## Run dotnet clean for each compiled DLL project.
 
 sync-tests: require-test-project ## Copy Tests~ sources and shader fixtures into the validation project.
 	@mkdir -p "$(TEST_PROJECT)/Assets/EditorTests/Fixtures"
-	@cp "Tests~/UvTileScannerTests.cs" "$(TEST_PROJECT)/Assets/EditorTests/UvTileScannerTests.cs"
+	@cp Tests~/*.cs "$(TEST_PROJECT)/Assets/EditorTests/"
 	@cp "Tests~/Nvh.UvTileScanner.Tests.asmdef" "$(TEST_PROJECT)/Assets/EditorTests/Nvh.UvTileScanner.Tests.asmdef"
-	@cp Tests~/Fixtures/*.shader "$(TEST_PROJECT)/Assets/EditorTests/Fixtures/"
+	@cp Tests~/Fixtures/* "$(TEST_PROJECT)/Assets/EditorTests/Fixtures/"
 
 test: build ## Build the DLLs and run all Edit Mode tests in the validation project.
 	@$(MAKE) --no-print-directory test-only UNITY_DATA_DIR="$(UNITY_DATA_DIR)" UNITY_EXECUTABLE="$(UNITY_EXECUTABLE)" TEST_PROJECT="$(TEST_PROJECT)" TEST_RESULTS="$(TEST_RESULTS)" TEST_LOG="$(TEST_LOG)"
@@ -131,7 +132,7 @@ verify: test ## Build all DLLs and run the complete Edit Mode validation suite.
 	@printf 'Verification complete. Results: %s\n' "$(TEST_RESULTS)"
 
 list-dlls: ## List distributable DLL paths and file sizes.
-	@ls -lh Editor/Nvh.UvTileScanner.Core.Editor.dll Editor/Nvh.UvTileScanner.Poiyomi.Editor.dll Editor/Nvh.UvTileScanner.Editor.dll
+	@ls -lh Editor/Nvh.UvTileScanner.Core.Editor.dll Editor/Nvh.UvTileScanner.Conversion.Editor.dll Editor/Nvh.UvTileScanner.Poiyomi.Editor.dll Editor/Nvh.UvTileScanner.Editor.dll Editor/YamlDotNet.dll
 
 require-unity-data:
 	@if [[ -z "$(UNITY_DATA_DIR)" || ! -f "$(UNITY_DATA_DIR)/Managed/UnityEditor.dll" ]]; then \

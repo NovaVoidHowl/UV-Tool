@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using Nvh.UvTileScanner.Conversion;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -22,6 +24,7 @@ namespace Nvh.UvTileScanner
         [SerializeField] private string _search = string.Empty;
         [SerializeField] private AnimationPropertyFilter _animationPropertyFilter = AnimationPropertyFilter.UvControls;
         [SerializeField] private string _animationSearch = string.Empty;
+        [SerializeField] private TextAsset _conversionConfigurationAsset;
 
         private AvatarUvScanReport _report;
         private ObjectField _avatarRootField;
@@ -47,6 +50,14 @@ namespace Nvh.UvTileScanner
         private Label _missingMeshesWarning;
         private VisualElement _animationResults;
         private VisualElement _results;
+        private ObjectField _conversionConfigField;
+        private Button _exportYamlButton;
+        private Button _validateConfigButton;
+        private Button _dryRunButton;
+        private Button _runConversionButton;
+        private VisualElement _conversionStatus;
+        private GeometryConversionReport _conversionReport;
+        private readonly List<ConversionDiagnostic> _conversionDiagnostics = new List<ConversionDiagnostic>();
         private AvatarAnimationAnalysisReport _indexedAnimationReport;
         private AnimationAnalysisFilterIndex _animationFilterIndex;
         private AnimationFilterResult _animationFilterResult;
@@ -136,6 +147,12 @@ namespace Nvh.UvTileScanner
             _missingMeshesWarning = rootVisualElement.Q<Label>("missing-meshes-warning");
             _animationResults = rootVisualElement.Q("animation-results");
             _results = rootVisualElement.Q("results");
+            _conversionConfigField = rootVisualElement.Q<ObjectField>("conversion-config-field");
+            _exportYamlButton = rootVisualElement.Q<Button>("export-yaml-button");
+            _validateConfigButton = rootVisualElement.Q<Button>("validate-config-button");
+            _dryRunButton = rootVisualElement.Q<Button>("dry-run-button");
+            _runConversionButton = rootVisualElement.Q<Button>("run-conversion-button");
+            _conversionStatus = rootVisualElement.Q("conversion-status");
         }
 
         private void ConfigureControls()
@@ -150,6 +167,7 @@ namespace Nvh.UvTileScanner
                 {
                     _report = null;
                     InvalidateAnimationFilterIndex();
+                    InvalidateConversionReport();
                 }
                 RefreshView();
             });
@@ -181,6 +199,19 @@ namespace Nvh.UvTileScanner
             _scanButton.clicked += RunScan;
             _clearButton.clicked += ClearReport;
             _cancelScanButton.clicked += () => CancelScan(true);
+
+            _conversionConfigField.objectType = typeof(TextAsset);
+            _conversionConfigField.allowSceneObjects = false;
+            _conversionConfigField.RegisterValueChangedCallback(evt =>
+            {
+                _conversionConfigurationAsset = evt.newValue as TextAsset;
+                InvalidateConversionReport();
+                RefreshConversionControls();
+            });
+            _exportYamlButton.clicked += ExportConfigurationTemplate;
+            _validateConfigButton.clicked += () => ValidateConfiguration(false);
+            _dryRunButton.clicked += () => ValidateConfiguration(true);
+            _runConversionButton.clicked += RunConversion;
         }
 
         private void ConfigureVersionBadge()
@@ -219,6 +250,7 @@ namespace Nvh.UvTileScanner
             _searchField.SetValueWithoutNotify(_search ?? string.Empty);
             _animationCategoryFilter.SetValueWithoutNotify(GetAnimationFilterLabel(_animationPropertyFilter));
             _animationSearchField.SetValueWithoutNotify(_animationSearch ?? string.Empty);
+            _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
         }
 
         private void RefreshView()
@@ -236,6 +268,7 @@ namespace Nvh.UvTileScanner
             SetDisplayed(_emptyState, !hasReport);
             SetDisplayed(_reportContent, hasReport);
             SetDisplayed(_animationFilterToolbar, hasReport && _report.AnimationAnalysis != null);
+            RefreshConversionControls();
 
             if (!hasReport)
             {
@@ -1179,6 +1212,7 @@ namespace Nvh.UvTileScanner
                 _animationScope = _wholeProjectAnimations
                     ? AnimationScanScope.WholeProject : AnimationScanScope.AvatarLinked;
                 _report = null;
+                InvalidateConversionReport();
                 InvalidateAnimationFilterIndex();
                 _isScanning = true;
                 _scanProgressValue = 0f;
@@ -1205,6 +1239,7 @@ namespace Nvh.UvTileScanner
         {
             CancelScan(false);
             _report = null;
+            InvalidateConversionReport();
             InvalidateAnimationFilterIndex();
             RefreshView();
         }
@@ -1304,6 +1339,172 @@ namespace Nvh.UvTileScanner
             _meshScan = null;
             _animationScan = null;
             _isScanning = false;
+        }
+
+        private void ExportConfigurationTemplate()
+        {
+            if (_report == null || _report.Root == null)
+                return;
+            string defaultName = string.IsNullOrWhiteSpace(_report.Root.name)
+                ? "AvatarGeometry" : _report.Root.name + "Geometry";
+            string assetPath = EditorUtility.SaveFilePanelInProject(
+                "Export geometry conversion YAML", defaultName, "yaml",
+                "Choose where to save the editable conversion configuration template.");
+            if (string.IsNullOrEmpty(assetPath))
+                return;
+            if (File.Exists(ToAbsoluteProjectPath(assetPath)) &&
+                !EditorUtility.DisplayDialog("Replace YAML configuration?",
+                    "The selected file already exists. Replace it with a newly generated template?",
+                    "Replace", "Cancel"))
+                return;
+            try
+            {
+                File.WriteAllText(ToAbsoluteProjectPath(assetPath), ConfigurationTemplateExporter.Export(_report));
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
+                _conversionConfigurationAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
+                _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+                InvalidateConversionReport();
+                RefreshConversionControls();
+                EditorGUIUtility.PingObject(_conversionConfigurationAsset);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                ShowNotification(new GUIContent("YAML export failed. See the Console."));
+            }
+        }
+
+        private void ValidateConfiguration(bool dryRun)
+        {
+            _conversionDiagnostics.Clear();
+            _conversionReport = null;
+            if (_conversionConfigurationAsset == null || _avatarRoot == null)
+            {
+                RefreshConversionControls();
+                return;
+            }
+            ConfigurationParseResult parsed = GeometryConfigurationYaml.Parse(_conversionConfigurationAsset.text);
+            _conversionDiagnostics.AddRange(parsed.Diagnostics);
+            if (parsed.Success)
+            {
+                _conversionReport = GeometryConversionPlanner.ValidateAndPlan(_avatarRoot, parsed.Configuration, _report);
+                _conversionDiagnostics.AddRange(_conversionReport.Diagnostics);
+            }
+            RefreshConversionControls();
+            if (_conversionReport != null && !_conversionReport.HasErrors)
+                ShowNotification(new GUIContent(dryRun ? "Dry run passed." : "Configuration is valid."));
+        }
+
+        private void RunConversion()
+        {
+            if (_conversionConfigurationAsset == null || _avatarRoot == null)
+                return;
+            ConfigurationParseResult parsed = GeometryConfigurationYaml.Parse(_conversionConfigurationAsset.text);
+            _conversionDiagnostics.Clear();
+            _conversionDiagnostics.AddRange(parsed.Diagnostics);
+            if (!parsed.Success)
+            {
+                _conversionReport = null;
+                RefreshConversionControls();
+                return;
+            }
+            GeometryConversionReport validation = GeometryConversionPlanner.ValidateAndPlan(
+                _avatarRoot, parsed.Configuration, _report);
+            if (validation.HasErrors)
+            {
+                _conversionReport = validation;
+                _conversionDiagnostics.AddRange(validation.Diagnostics);
+                RefreshConversionControls();
+                return;
+            }
+            _conversionReport = GeometryConversionOutput.Convert(_avatarRoot, parsed.Configuration, _report);
+            _conversionDiagnostics.AddRange(_conversionReport.Diagnostics);
+            RefreshConversionControls();
+            if (_conversionReport.HasErrors)
+                return;
+            UnityEngine.Object prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_conversionReport.OutputPrefabPath);
+            Selection.activeObject = prefab;
+            EditorGUIUtility.PingObject(prefab);
+            ShowNotification(new GUIContent("Converted prefab and manifest created."));
+        }
+
+        private void InvalidateConversionReport()
+        {
+            _conversionReport = null;
+            _conversionDiagnostics.Clear();
+        }
+
+        private void RefreshConversionControls()
+        {
+            if (_conversionStatus == null)
+                return;
+            bool hasScan = _report != null && _report.Root != null;
+            bool hasConfiguration = _conversionConfigurationAsset != null;
+            _exportYamlButton.SetEnabled(hasScan && !_isScanning);
+            _validateConfigButton.SetEnabled(hasScan && hasConfiguration && !_isScanning);
+            _dryRunButton.SetEnabled(hasScan && hasConfiguration && !_isScanning);
+            _runConversionButton.SetEnabled(hasScan && hasConfiguration && !_isScanning &&
+                                            _conversionReport != null && !_conversionReport.HasErrors);
+            _conversionStatus.Clear();
+            if (!hasConfiguration)
+            {
+                AddConversionMessage("Export or select a YAML configuration to begin.",
+                    ConversionDiagnosticSeverity.Info);
+                return;
+            }
+            if (_conversionReport != null)
+            {
+                int subMeshes = 0;
+                foreach (RendererConversionPlan renderer in _conversionReport.Renderers)
+                    subMeshes += renderer.OutputSubMeshes.Count;
+                string summary = _conversionReport.HasErrors
+                    ? "Validation failed; conversion is disabled."
+                    : $"Ready: {_conversionReport.Renderers.Count} renderer(s), " +
+                      $"{_conversionReport.TotalTriangleCount} triangle(s), {subMeshes} output submesh(es), " +
+                      $"{_conversionReport.UnassignedTriangleCount} unassigned triangle(s).";
+                AddConversionMessage(summary, _conversionReport.HasErrors
+                    ? ConversionDiagnosticSeverity.Error : ConversionDiagnosticSeverity.Info);
+                if (!string.IsNullOrEmpty(_conversionReport.OutputPrefabPath))
+                    AddConversionMessage("Created " + _conversionReport.OutputPrefabPath +
+                                         " and " + _conversionReport.ManifestPath,
+                        ConversionDiagnosticSeverity.Info);
+                foreach (RendererConversionPlan renderer in _conversionReport.Renderers)
+                {
+                    AddConversionMessage($"{renderer.RendererPath}: {renderer.TriangleCount} triangle(s), " +
+                                         $"{renderer.OutputSubMeshes.Count} output submesh(es), " +
+                                         $"{renderer.UnassignedTriangleCount} unassigned.",
+                        ConversionDiagnosticSeverity.Info);
+                    foreach (OutputSubMeshPlan output in renderer.OutputSubMeshes)
+                    {
+                        string group = output.IsUnassigned ? "Unassigned/pass-through" : output.GroupId;
+                        AddConversionMessage($"  {group}: source material slot {output.SourceMaterialSlot} → " +
+                                             $"output submesh {output.OutputSubMesh}, {output.TriangleCount} triangle(s).",
+                            ConversionDiagnosticSeverity.Info);
+                    }
+                }
+            }
+            else if (_conversionDiagnostics.Count == 0)
+                AddConversionMessage("Configuration changed. Validate or dry-run it before conversion.",
+                    ConversionDiagnosticSeverity.Info);
+            foreach (ConversionDiagnostic diagnostic in _conversionDiagnostics)
+                AddConversionMessage(diagnostic.ToString(), diagnostic.Severity);
+        }
+
+        private void AddConversionMessage(string message, ConversionDiagnosticSeverity severity)
+        {
+            var label = new Label(message);
+            label.AddToClassList("message-box");
+            label.AddToClassList("wrap-text");
+            label.AddToClassList(severity == ConversionDiagnosticSeverity.Error
+                ? "message-error" : severity == ConversionDiagnosticSeverity.Warning
+                    ? "message-warning" : "message-info");
+            _conversionStatus.Add(label);
+        }
+
+        private static string ToAbsoluteProjectPath(string assetPath)
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.GetFullPath(Path.Combine(projectRoot, assetPath));
         }
 
         private static void SetDisplayed(VisualElement element, bool displayed)
