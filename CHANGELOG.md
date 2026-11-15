@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0 - 2026-11-15 - (plan H - Imp A)
+
+- Added a YAML/manifest-driven feature visibility preview using a disposable converted-avatar scene clone.
+- Added dynamic UI Toolkit toggle and named-state controls with YAML defaults, explicit owned groups, and visible-group rules.
+- Added public manifest parsing and renderer/output-submesh mapping validation for preview consumers.
+- Added complete original-material-array snapshots and full recomputation on every state change, plus reset, restore, and end-preview actions.
+- Added an Editor-only Built-in Render Pipeline NoRender shader/material that writes no colour or depth and provides no shadow-caster pass.
+- Added clear diagnostics for missing mappings, invalid indices, ownership conflicts, missing materials, unsupported render pipelines, and manifest mismatches.
+- Added Edit Mode coverage for toggles, exclusive states, multiple groups, restoration, failed and explicit cleanup, NoRender state, and prefab/mesh/material non-mutation.
+- Matched the NoRender material's internal object name to its asset filename to avoid Unity's main-object-name warning.
+
 ## 1.6.0 - 2026-11-14 - (plan H/A - Imp A)
 
 - Added a strict, versioned YAML schema and safe YamlDotNet 18.1.0 representation-model parser with duplicate-key, unknown-field, tag, anchor, and line/column diagnostics.

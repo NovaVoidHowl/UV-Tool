@@ -50,13 +50,13 @@ namespace Nvh.UvTileScanner.Conversion
                 createdAssets.Add(prefabPath);
                 AssetDatabase.SaveAssets();
 
-                ConversionManifest manifest = BuildManifest(configuration, avatarRoot, prefabPath,
+                GeometryConversionManifest manifest = BuildManifest(configuration, avatarRoot, prefabPath,
                     manifestRenderers, diagnostics);
                 string manifestPath = AssetDatabase.GenerateUniqueAssetPath(
                     outputDirectory + "/" + SanitizeName(configuration.Avatar.Name) + "_ConversionManifest.json");
                 string projectRoot = Directory.GetParent(Application.dataPath).FullName;
                 string absoluteManifestPath = Path.GetFullPath(Path.Combine(projectRoot, manifestPath));
-                File.WriteAllText(absoluteManifestPath, JsonUtility.ToJson(manifest, true));
+                File.WriteAllText(absoluteManifestPath, GeometryConversionManifestJson.Serialize(manifest));
                 AssetDatabase.ImportAsset(manifestPath, ImportAssetOptions.ForceSynchronousImport);
                 createdAssets.Add(manifestPath);
 
@@ -159,7 +159,7 @@ namespace Nvh.UvTileScanner.Conversion
             };
         }
 
-        private static ConversionManifest BuildManifest(AvatarGeometryConfiguration configuration,
+        private static GeometryConversionManifest BuildManifest(AvatarGeometryConfiguration configuration,
             GameObject sourceRoot, string prefabPath, List<ManifestRenderer> renderers,
             List<ConversionDiagnostic> diagnostics)
         {
@@ -191,7 +191,7 @@ namespace Nvh.UvTileScanner.Conversion
                     message = diagnostic.Message
                 });
             string sourcePath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(sourceRoot);
-            return new ConversionManifest
+            return new GeometryConversionManifest
             {
                 manifestVersion = ManifestVersion,
                 configurationSchemaVersion = configuration.SchemaVersion,
@@ -234,72 +234,5 @@ namespace Nvh.UvTileScanner.Conversion
             return new string(result).Trim('_');
         }
 
-        [Serializable]
-        private sealed class ConversionManifest
-        {
-            public int manifestVersion;
-            public int configurationSchemaVersion;
-            public string sourceAvatarName;
-            public string configuredAvatarName;
-            public string sourceAvatarAssetPath;
-            public string sourceAvatarGuid;
-            public string outputPrefabAssetPath;
-            public string outputPrefabGuid;
-            public ManifestRenderer[] renderers;
-            public ManifestFeature[] features;
-            public ManifestDiagnostic[] diagnostics;
-        }
-
-        [Serializable]
-        private sealed class ManifestRenderer
-        {
-            public string rendererPath;
-            public string rendererType;
-            public string sourceMeshName;
-            public string sourceMeshAssetPath;
-            public string sourceMeshGuid;
-            public string sourceMeshLocalId;
-            public string outputMeshAssetPath;
-            public string outputMeshGuid;
-            public int sourceTriangleCount;
-            public int unassignedTriangleCount;
-            public ManifestSubMeshMapping[] subMeshMappings;
-        }
-
-        [Serializable]
-        private sealed class ManifestSubMeshMapping
-        {
-            public int outputSubMesh;
-            public int sourceSubMesh;
-            public int sourceMaterialSlot;
-            public string geometryGroup;
-            public bool unassigned;
-            public int triangleCount;
-        }
-
-        [Serializable]
-        private sealed class ManifestFeature
-        {
-            public string id;
-            public string type;
-            public string defaultState;
-            public string[] ownedGroups;
-            public ManifestFeatureState[] states;
-        }
-
-        [Serializable]
-        private sealed class ManifestFeatureState
-        {
-            public string id;
-            public string[] visibleGroups;
-        }
-
-        [Serializable]
-        private sealed class ManifestDiagnostic
-        {
-            public string severity;
-            public string code;
-            public string message;
-        }
     }
 }

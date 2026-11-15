@@ -1,6 +1,6 @@
 # UV Tile Scanner
 
-UV Tile Scanner is an Editor-only Unity package for auditing avatar meshes, UV tiles, renderer material assignments, shader-specific UV discard/dissolve settings, and material animation bindings. It can also use an explicit YAML configuration to partition source triangles into geometry groups and create a non-destructive converted prefab plus a machine-readable manifest.
+UV Tile Scanner is an Editor-only Unity package for auditing avatar meshes, UV tiles, renderer material assignments, shader-specific UV discard/dissolve settings, and material animation bindings. It can use explicit YAML to partition source triangles into geometry groups, create a non-destructive converted prefab and manifest, and preview configured feature visibility on a disposable clone.
 
 The window uses UI Toolkit and is distributed as four compiled editor DLLs, the pinned YamlDotNet dependency, and UXML/USS assets. Source, documentation, samples, and tests remain available in folders ending in `~`, which Unity ignores when importing the package.
 
@@ -27,13 +27,16 @@ The window uses UI Toolkit and is distributed as four compiled editor DLLs, the 
 - Dry-runs expected renderer/group/material mappings and triangle/submesh counts without creating assets.
 - Clones meshes and repartitions only their submesh index lists, retaining source vertex attributes, shared vertices, skinning, blendshapes, bounds, winding, and material provenance.
 - Creates a cloned avatar prefab, new mesh assets, and a versioned JSON manifest without modifying source assets.
+- Loads converted avatars plus YAML/manifest definitions into a disposable feature preview with toggle and exclusive-state controls.
+- Recomputes complete renderer material arrays from preserved originals and substitutes only hidden mapped groups with a packaged NoRender material.
+- Provides reset-to-defaults, restore-all-materials, and explicit end-preview cleanup actions.
 
 ## Compatibility
 
 - Minimum Unity version: Unity 2021.3
 - Primary validation target: Unity 2022.3.58f1
 - Editor only; none of the assemblies are included in player builds
-- Built-in render-pipeline shader inspection; no runtime component is installed
+- Built-in render-pipeline shader inspection and feature preview; no runtime component is installed
 - Mesh Read/Write does not need to be enabled because scanning uses Unity's read-only mesh data API
 
 The project retains its `netstandard2.1` build and Unity 2021.3 minimum-package declaration. The current automated compile and Edit Mode validation run uses Unity 2022.3.58f1; the older Editor baseline was not rerun for this release.
@@ -43,17 +46,20 @@ The project retains its `netstandard2.1` build and Unity 2021.3 minimum-package 
 | Path | Purpose |
 | --- | --- |
 | `Editor/Nvh.UvTileScanner.Core.Editor.dll` | Mesh scanner, result models, detector contract/registry, caching, and mesh/material correlation |
-| `Editor/Nvh.UvTileScanner.Conversion.Editor.dll` | Strict YAML models/parser, template exporter, validation, triangle planning, mesh output, prefab output, and manifest generation |
+| `Editor/Nvh.UvTileScanner.Conversion.Editor.dll` | YAML/manifest models, validation, geometry conversion, asset output, and disposable feature-preview session |
 | `Editor/Nvh.UvTileScanner.Editor.dll` | UI Toolkit EditorWindow |
 | `Editor/Nvh.UvTileScanner.Poiyomi.Editor.dll` | Optional Poiyomi detector with no mandatory Poiyomi dependency |
 | `Editor/YamlDotNet.dll` | Pinned YamlDotNet 18.1.0 parser dependency used only by the conversion assembly |
+| `Editor/Preview/UVTileScannerNoRender.shader` | Built-in Render Pipeline shader used to suppress hidden preview submeshes |
+| `Editor/Preview/UVTileScannerNoRender.mat` | Read-only packaged material referencing the NoRender shader |
 | `Editor/UI/UvTileScannerWindow.uxml` | Editable window layout |
 | `Editor/UI/UvTileScannerWindow.uss` | Editable window styling |
 | `Source~` | C# source and DLL build projects; ignored by Unity package import |
 | `Tests~` | Edit Mode tests and synthetic shader fixtures; ignored by default |
 | `Documentation~` | Detector-extension and Poiyomi support details |
 | `Documentation~/AnimationAnalysis.md` | Animation discovery, binding matching, and generated-controller limitations |
-| `Documentation~/GeometryConversion.md` | YAML schema, workflow, classification policies, output manifest, and preview limitation |
+| `Documentation~/GeometryConversion.md` | YAML schema, workflow, classification policies, output manifest, and generated-preview limitation |
+| `Documentation~/FeaturePreview.md` | Feature preview workflow, material restoration guarantees, diagnostics, and shader limitations |
 | `Samples~/Nawvaro FT/NawvaroFT.yaml` | Manually supplied first-milestone mapping for the Nawvaro FT `Base` renderer |
 | `Third Party Notices.md` | YamlDotNet version, source, and MIT licence notice |
 
@@ -69,7 +75,7 @@ Install using one of these approaches:
 
 Installing the complete package lets the version badge resolve the version directly from `package.json`. If the `Editor` directory is copied loose into `Assets`, scanning can still work, but Unity Package Manager cannot associate the assembly with its package and the badge will show **Version unavailable**.
 
-Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core/conversion DLLs, YamlDotNet, and the `Editor/UI` assets. To remove the tool, remove the package through Package Manager or delete its complete local package directory.
+Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core/conversion DLLs, YamlDotNet, `Editor/UI`, and `Editor/Preview` assets. To remove the tool, remove the package through Package Manager or delete its complete local package directory.
 
 ## Using the scanner
 
@@ -98,6 +104,16 @@ The schema uses zero-based Unity UV channels and standard UDIM mapping. Triangle
 See [YAML geometry conversion](Documentation~/GeometryConversion.md) for the complete schema, safety rules, and manifest. The included Nawvaro FT sample retains the supplied `Base` mappings; dry-run it against the actual selected asset before conversion. No additional avatar mappings are assumed.
 
 The Nawvaro file can also be imported through Package Manager's **Samples** section for this package, then selected as a `TextAsset` in the conversion UI.
+
+### Feature visibility preview
+
+The always-available **Feature visibility preview** panel accepts a converted avatar prefab or scene object, the YAML configuration, and its generated manifest. Successful conversion fills the output prefab and manifest fields automatically.
+
+Starting preview creates a disposable scene clone and applies YAML default states. Two-state toggle features use a toggle control; exclusive and other named-state features use dropdowns. Hidden owned groups are resolved through the manifest to output material slots and receive the NoRender material. Visible groups, unowned groups, and unrelated slots retain their captured originals.
+
+Each change rebuilds every mapped renderer's entire material array from its initial snapshot before applying all active states. **Reset to YAML defaults**, **Restore all materials**, and **End preview** provide explicit recovery and cleanup. Closing the window or changing an input also destroys the clone. Source prefabs, FBXs, meshes, and materials are not edited.
+
+See [Feature visibility preview](Documentation~/FeaturePreview.md) for validation behavior and Built-in-pipeline limitations.
 
 You can also right-click a selected hierarchy object and choose **Scan second UV tiles**.
 
@@ -277,15 +293,17 @@ The build intentionally references Unity's managed facade assemblies to retain c
 - renderer/UV/material resolution, UDIM conversion, seam and spanning-triangle classification;
 - overlaps, feature ownership/defaults, unassigned preservation, exact membership, shared vertices, and multiple materials;
 - cloned mesh skinning/blendshape/bounds preservation, non-destructive prefab output, manifest mappings, template export, detector independence, and scanner-report integration.
+- feature toggle/exclusive-state switching, multi-group ownership, complete material restoration, cleanup, NoRender configuration, and prefab/mesh/material non-mutation.
 
-The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 45 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
+The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 49 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
 
 To run the suite with the checked-out validation project, use `make test` as described above. To run the tests in another project manually, copy `Tests~` into that project's `Assets` directory or temporarily remove the trailing `~` so Unity imports the test assembly and fixtures.
 
 ## Current limitations
 
 - Geometry conversion partitions meshes and emits a neutral manifest; it does not generate Resonite components, ProtoFlux, platform shaders, or publish avatars.
-- Schema v1 does not create separate toggleable preview renderers. `generatePreview: true` produces a warning, and the converted prefab retains all partitioned geometry visibly.
+- Schema v1 does not create separate toggleable renderers. `generatePreview: true` still produces a warning; interactive preview instead substitutes materials on a disposable converted-avatar clone.
+- NoRender preview supports only the Built-in Render Pipeline. Unsupported or missing source-material shaders are reported but can still have their slot reference hidden/restored. Custom replacement shaders, command buffers, selection outlines, or other render overrides may still process or visualise geometry; URP/HDRP preview is rejected.
 - Only triangle submesh topology is converted. Other topology is rejected rather than rewritten.
 - Animation filter views contain bindings correlated with at least one scanned material slot. Unmatched raw project curves remain in the overall scan statistics but are not presented as material-property matches.
 - The primary mesh summary scans UV1. Other channels are scanned only when a detected shader feature selects them.

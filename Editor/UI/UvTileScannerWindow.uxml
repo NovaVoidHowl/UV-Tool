@@ -23,6 +23,24 @@
             </ui:VisualElement>
         </ui:VisualElement>
 
+        <ui:Foldout name="feature-preview-section" text="Feature visibility preview" value="false" class="feature-preview-section section">
+            <ui:Label text="Load a converted avatar, its YAML configuration, and conversion manifest. Preview changes are applied only to a disposable scene clone."
+                      class="wrap-text feature-preview-description" />
+            <uie:ObjectField name="preview-avatar-field" label="Converted avatar" />
+            <uie:ObjectField name="preview-config-field" label="YAML configuration" />
+            <uie:ObjectField name="preview-manifest-field" label="Conversion manifest" />
+            <ui:VisualElement class="preview-start-row">
+                <ui:Button name="start-preview-button" text="Start feature preview" class="primary-button" />
+            </ui:VisualElement>
+            <ui:VisualElement name="preview-status" class="preview-status" />
+            <ui:ScrollView name="preview-controls" class="preview-controls" />
+            <ui:VisualElement name="preview-action-row" class="preview-action-row">
+                <ui:Button name="reset-preview-button" text="Reset to YAML defaults" />
+                <ui:Button name="restore-preview-button" text="Restore all materials" />
+                <ui:Button name="end-preview-button" text="End preview" />
+            </ui:VisualElement>
+        </ui:Foldout>
+
         <ui:VisualElement name="empty-state" class="message-box empty-state">
             <ui:Label name="empty-state-message" class="wrap-text" />
         </ui:VisualElement>

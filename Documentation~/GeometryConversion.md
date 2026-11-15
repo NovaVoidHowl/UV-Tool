@@ -65,8 +65,10 @@ The output mesh is a clone of the source mesh. Only submesh index lists are repa
 
 The generated JSON manifest has `manifestVersion: 1`. It records source avatar and mesh asset identifiers where available, output prefab and mesh asset paths/GUIDs, source renderer paths, source material slots, original-to-output submesh mappings, group IDs, triangle counts, unassigned flags, feature ownership, states, defaults, and conversion diagnostics. It contains no Poiyomi-, VRChat-, VRCFury-, or Resonite-specific implementation data.
 
-## Current preview limitation
+## Generated-preview limitation and interactive preview
 
-`generatePreview` is reserved in schema v1, but separate toggleable preview renderers are not generated in this milestone. Requesting it produces a warning. The converted prefab retains all partitioned geometry visibly; Unity submeshes are not independently toggleable renderers. The manifest is the intended input for a future platform integration.
+`generatePreview` is reserved in schema v1, but separate toggleable preview renderers are not generated. Requesting it produces a warning. The converted prefab retains all partitioned geometry visibly; Unity submeshes are not independently toggleable renderers.
+
+Version 1.7 adds an interactive, Editor-only alternative: feature preview loads the converted prefab, YAML, and manifest, then replaces hidden output material slots with a NoRender material on a disposable clone. It never changes the generated prefab or splits renderers. See [Feature visibility preview](FeaturePreview.md).
 
 The included `Samples~/Nawvaro FT/NawvaroFT.yaml` preserves the manually supplied `Base` renderer mappings. They must be dry-run against the actual selected Nawvaro FT asset; the package does not silently alter them or assume additional `Animal Parts`, `Body`, or `Hair` mappings.

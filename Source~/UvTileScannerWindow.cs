@@ -16,6 +16,7 @@ namespace Nvh.UvTileScanner
         private const string WindowTitle = "UV Tile Scanner";
         private const string UxmlGuid = "9084d5f243624d4fb8aa5b1f2cf47730";
         private const string UssGuid = "cc49e43249c140d7a5f1aa623b3c811c";
+        private const string NoRenderMaterialGuid = "a8e39e8773144624967f9cd02fc4ecaf";
 
         [SerializeField] private GameObject _avatarRoot;
         [SerializeField] private bool _includeInactive = true;
@@ -25,6 +26,8 @@ namespace Nvh.UvTileScanner
         [SerializeField] private AnimationPropertyFilter _animationPropertyFilter = AnimationPropertyFilter.UvControls;
         [SerializeField] private string _animationSearch = string.Empty;
         [SerializeField] private TextAsset _conversionConfigurationAsset;
+        [SerializeField] private GameObject _previewAvatarSource;
+        [SerializeField] private TextAsset _previewManifestAsset;
 
         private AvatarUvScanReport _report;
         private ObjectField _avatarRootField;
@@ -58,6 +61,19 @@ namespace Nvh.UvTileScanner
         private VisualElement _conversionStatus;
         private GeometryConversionReport _conversionReport;
         private readonly List<ConversionDiagnostic> _conversionDiagnostics = new List<ConversionDiagnostic>();
+        private ObjectField _previewAvatarField;
+        private ObjectField _previewConfigField;
+        private ObjectField _previewManifestField;
+        private Button _startPreviewButton;
+        private Button _resetPreviewButton;
+        private Button _restorePreviewButton;
+        private Button _endPreviewButton;
+        private VisualElement _previewStatus;
+        private VisualElement _previewControls;
+        private VisualElement _previewActionRow;
+        private FeatureVisibilityPreviewSession _previewSession;
+        private readonly List<ConversionDiagnostic> _previewDiagnostics = new List<ConversionDiagnostic>();
+        private string _previewStatusMessage;
         private AvatarAnimationAnalysisReport _indexedAnimationReport;
         private AnimationAnalysisFilterIndex _animationFilterIndex;
         private AnimationFilterResult _animationFilterResult;
@@ -153,6 +169,16 @@ namespace Nvh.UvTileScanner
             _dryRunButton = rootVisualElement.Q<Button>("dry-run-button");
             _runConversionButton = rootVisualElement.Q<Button>("run-conversion-button");
             _conversionStatus = rootVisualElement.Q("conversion-status");
+            _previewAvatarField = rootVisualElement.Q<ObjectField>("preview-avatar-field");
+            _previewConfigField = rootVisualElement.Q<ObjectField>("preview-config-field");
+            _previewManifestField = rootVisualElement.Q<ObjectField>("preview-manifest-field");
+            _startPreviewButton = rootVisualElement.Q<Button>("start-preview-button");
+            _resetPreviewButton = rootVisualElement.Q<Button>("reset-preview-button");
+            _restorePreviewButton = rootVisualElement.Q<Button>("restore-preview-button");
+            _endPreviewButton = rootVisualElement.Q<Button>("end-preview-button");
+            _previewStatus = rootVisualElement.Q("preview-status");
+            _previewControls = rootVisualElement.Q("preview-controls");
+            _previewActionRow = rootVisualElement.Q("preview-action-row");
         }
 
         private void ConfigureControls()
@@ -204,14 +230,49 @@ namespace Nvh.UvTileScanner
             _conversionConfigField.allowSceneObjects = false;
             _conversionConfigField.RegisterValueChangedCallback(evt =>
             {
+                EndFeaturePreview(false);
                 _conversionConfigurationAsset = evt.newValue as TextAsset;
+                _previewConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
                 InvalidateConversionReport();
                 RefreshConversionControls();
+                RefreshPreviewControls();
             });
             _exportYamlButton.clicked += ExportConfigurationTemplate;
             _validateConfigButton.clicked += () => ValidateConfiguration(false);
             _dryRunButton.clicked += () => ValidateConfiguration(true);
             _runConversionButton.clicked += RunConversion;
+
+            _previewAvatarField.objectType = typeof(GameObject);
+            _previewAvatarField.allowSceneObjects = true;
+            _previewAvatarField.RegisterValueChangedCallback(evt =>
+            {
+                EndFeaturePreview(false);
+                _previewAvatarSource = evt.newValue as GameObject;
+                RefreshPreviewControls();
+            });
+            _previewConfigField.objectType = typeof(TextAsset);
+            _previewConfigField.allowSceneObjects = false;
+            _previewConfigField.RegisterValueChangedCallback(evt =>
+            {
+                EndFeaturePreview(false);
+                _conversionConfigurationAsset = evt.newValue as TextAsset;
+                _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+                InvalidateConversionReport();
+                RefreshConversionControls();
+                RefreshPreviewControls();
+            });
+            _previewManifestField.objectType = typeof(TextAsset);
+            _previewManifestField.allowSceneObjects = false;
+            _previewManifestField.RegisterValueChangedCallback(evt =>
+            {
+                EndFeaturePreview(false);
+                _previewManifestAsset = evt.newValue as TextAsset;
+                RefreshPreviewControls();
+            });
+            _startPreviewButton.clicked += StartFeaturePreview;
+            _resetPreviewButton.clicked += ResetFeaturePreview;
+            _restorePreviewButton.clicked += RestorePreviewMaterials;
+            _endPreviewButton.clicked += () => EndFeaturePreview(true);
         }
 
         private void ConfigureVersionBadge()
@@ -251,6 +312,9 @@ namespace Nvh.UvTileScanner
             _animationCategoryFilter.SetValueWithoutNotify(GetAnimationFilterLabel(_animationPropertyFilter));
             _animationSearchField.SetValueWithoutNotify(_animationSearch ?? string.Empty);
             _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+            _previewAvatarField.SetValueWithoutNotify(_previewAvatarSource);
+            _previewConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+            _previewManifestField.SetValueWithoutNotify(_previewManifestAsset);
         }
 
         private void RefreshView()
@@ -269,6 +333,7 @@ namespace Nvh.UvTileScanner
             SetDisplayed(_reportContent, hasReport);
             SetDisplayed(_animationFilterToolbar, hasReport && _report.AnimationAnalysis != null);
             RefreshConversionControls();
+            RefreshPreviewControls();
 
             if (!hasReport)
             {
@@ -1335,6 +1400,7 @@ namespace Nvh.UvTileScanner
 
         private void OnDisable()
         {
+            EndFeaturePreview(false);
             EditorApplication.update -= AdvanceScan;
             _meshScan = null;
             _animationScan = null;
@@ -1363,6 +1429,7 @@ namespace Nvh.UvTileScanner
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport);
                 _conversionConfigurationAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(assetPath);
                 _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+                _previewConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
                 InvalidateConversionReport();
                 RefreshConversionControls();
                 EditorGUIUtility.PingObject(_conversionConfigurationAsset);
@@ -1423,6 +1490,11 @@ namespace Nvh.UvTileScanner
             if (_conversionReport.HasErrors)
                 return;
             UnityEngine.Object prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_conversionReport.OutputPrefabPath);
+            _previewAvatarSource = prefab as GameObject;
+            _previewManifestAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(_conversionReport.ManifestPath);
+            _previewAvatarField.SetValueWithoutNotify(_previewAvatarSource);
+            _previewManifestField.SetValueWithoutNotify(_previewManifestAsset);
+            RefreshPreviewControls();
             Selection.activeObject = prefab;
             EditorGUIUtility.PingObject(prefab);
             ShowNotification(new GUIContent("Converted prefab and manifest created."));
@@ -1499,6 +1571,173 @@ namespace Nvh.UvTileScanner
                 ? "message-error" : severity == ConversionDiagnosticSeverity.Warning
                     ? "message-warning" : "message-info");
             _conversionStatus.Add(label);
+        }
+
+        private void StartFeaturePreview()
+        {
+            EndFeaturePreview(false);
+            if (_previewAvatarSource == null || _conversionConfigurationAsset == null ||
+                _previewManifestAsset == null)
+            {
+                RefreshPreviewControls();
+                return;
+            }
+
+            ConfigurationParseResult configuration = GeometryConfigurationYaml.Parse(
+                _conversionConfigurationAsset.text);
+            _previewDiagnostics.AddRange(configuration.Diagnostics);
+            ManifestParseResult manifest = GeometryConversionManifestJson.Parse(_previewManifestAsset.text);
+            _previewDiagnostics.AddRange(manifest.Diagnostics);
+            if (!configuration.Success || !manifest.Success)
+            {
+                RefreshPreviewControls();
+                return;
+            }
+
+            Material noRender = LoadAssetByGuid<Material>(NoRenderMaterialGuid);
+            FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(
+                _previewAvatarSource, configuration.Configuration, manifest.Manifest, noRender);
+            _previewDiagnostics.AddRange(started.Diagnostics);
+            _previewSession = started.Session;
+            if (_previewSession != null)
+            {
+                _previewStatusMessage = "Preview active on a disposable scene clone. YAML defaults are applied.";
+                Selection.activeGameObject = _previewSession.PreviewInstance;
+                EditorGUIUtility.PingObject(_previewSession.PreviewInstance);
+            }
+            RefreshPreviewControls();
+        }
+
+        private void ResetFeaturePreview()
+        {
+            if (_previewSession == null || !_previewSession.IsActive) return;
+            _previewSession.ResetToDefaults();
+            _previewStatusMessage = "YAML default states restored.";
+            RefreshPreviewControls();
+        }
+
+        private void RestorePreviewMaterials()
+        {
+            if (_previewSession == null || !_previewSession.IsActive) return;
+            _previewSession.RestoreAllMaterials();
+            _previewStatusMessage = "All preview materials restored. Changing a feature state will reapply the preview.";
+            RefreshPreviewControls();
+        }
+
+        private void EndFeaturePreview(bool notify)
+        {
+            if (_previewSession != null)
+            {
+                _previewSession.EndPreview();
+                _previewSession = null;
+                if (notify) ShowNotification(new GUIContent("Feature preview ended and materials restored."));
+            }
+            _previewStatusMessage = null;
+            _previewDiagnostics.Clear();
+            if (_previewControls != null) RefreshPreviewControls();
+        }
+
+        private void RefreshPreviewControls()
+        {
+            if (_previewStatus == null || _previewControls == null)
+                return;
+            bool active = _previewSession != null && _previewSession.IsActive;
+            bool canStart = !active && _previewAvatarSource != null &&
+                            _conversionConfigurationAsset != null && _previewManifestAsset != null;
+            _startPreviewButton.SetEnabled(canStart);
+            SetDisplayed(_previewActionRow, active);
+            _previewStatus.Clear();
+            _previewControls.Clear();
+            if (!active && _previewDiagnostics.Count == 0)
+            {
+                AddPreviewMessage(canStart
+                    ? "Ready to create a disposable preview instance."
+                    : "Select a converted avatar, YAML configuration, and conversion manifest.",
+                    ConversionDiagnosticSeverity.Info);
+            }
+            if (!string.IsNullOrEmpty(_previewStatusMessage))
+                AddPreviewMessage(_previewStatusMessage, ConversionDiagnosticSeverity.Info);
+            foreach (ConversionDiagnostic diagnostic in _previewDiagnostics)
+                AddPreviewMessage(diagnostic.ToString(), diagnostic.Severity);
+            if (!active) return;
+
+            foreach (FeatureConfiguration feature in _previewSession.Features)
+                _previewControls.Add(CreatePreviewFeatureControl(feature));
+        }
+
+        private VisualElement CreatePreviewFeatureControl(FeatureConfiguration feature)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("preview-feature-card");
+            var title = new Label(feature.Id + " — " + FormatEnum(feature.Type));
+            title.AddToClassList("preview-feature-label");
+            card.Add(title);
+            List<FeatureStateConfiguration> states = feature.States ?? new List<FeatureStateConfiguration>();
+            if (feature.Type == GeometryFeatureType.Toggle && states.Count == 2)
+            {
+                FeatureStateConfiguration checkedState = states[0];
+                FeatureStateConfiguration uncheckedState = states[1];
+                int firstVisible = checkedState.VisibleGroups == null ? 0 : checkedState.VisibleGroups.Count;
+                int secondVisible = uncheckedState.VisibleGroups == null ? 0 : uncheckedState.VisibleGroups.Count;
+                if (secondVisible > firstVisible || (secondVisible == firstVisible &&
+                    string.Equals(feature.DefaultState, uncheckedState.Id, StringComparison.Ordinal)))
+                {
+                    FeatureStateConfiguration swap = checkedState;
+                    checkedState = uncheckedState;
+                    uncheckedState = swap;
+                }
+                FeatureStateConfiguration onState = checkedState;
+                FeatureStateConfiguration offState = uncheckedState;
+                var toggle = new Toggle($"{offState.Id} / {onState.Id}")
+                {
+                    tooltip = $"Unchecked selects '{offState.Id}'; checked selects '{onState.Id}'."
+                };
+                toggle.SetValueWithoutNotify(string.Equals(_previewSession.GetActiveState(feature.Id),
+                    onState.Id, StringComparison.Ordinal));
+                toggle.RegisterValueChangedCallback(evt =>
+                {
+                    string state = evt.newValue ? onState.Id : offState.Id;
+                    _previewSession.SetFeatureState(feature.Id, state);
+                    _previewStatusMessage = $"Feature '{feature.Id}' set to '{state}'.";
+                    RefreshPreviewStatusOnly();
+                });
+                card.Add(toggle);
+            }
+            else
+            {
+                var choices = new List<string>();
+                foreach (FeatureStateConfiguration state in states) choices.Add(state.Id);
+                var dropdown = new DropdownField("State", choices, 0);
+                dropdown.SetValueWithoutNotify(_previewSession.GetActiveState(feature.Id));
+                dropdown.RegisterValueChangedCallback(evt =>
+                {
+                    _previewSession.SetFeatureState(feature.Id, evt.newValue);
+                    _previewStatusMessage = $"Feature '{feature.Id}' set to '{evt.newValue}'.";
+                    RefreshPreviewStatusOnly();
+                });
+                card.Add(dropdown);
+            }
+            return card;
+        }
+
+        private void RefreshPreviewStatusOnly()
+        {
+            _previewStatus.Clear();
+            if (!string.IsNullOrEmpty(_previewStatusMessage))
+                AddPreviewMessage(_previewStatusMessage, ConversionDiagnosticSeverity.Info);
+            foreach (ConversionDiagnostic diagnostic in _previewDiagnostics)
+                AddPreviewMessage(diagnostic.ToString(), diagnostic.Severity);
+        }
+
+        private void AddPreviewMessage(string message, ConversionDiagnosticSeverity severity)
+        {
+            var label = new Label(message);
+            label.AddToClassList("message-box");
+            label.AddToClassList("wrap-text");
+            label.AddToClassList(severity == ConversionDiagnosticSeverity.Error
+                ? "message-error" : severity == ConversionDiagnosticSeverity.Warning
+                    ? "message-warning" : "message-info");
+            _previewStatus.Add(label);
         }
 
         private static string ToAbsoluteProjectPath(string assetPath)

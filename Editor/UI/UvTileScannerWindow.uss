@@ -64,6 +64,55 @@
     margin-bottom: 7px;
 }
 
+.feature-preview-section {
+    padding: 6px;
+    margin-bottom: 7px;
+}
+
+.feature-preview-description {
+    margin: 3px 4px 5px 18px;
+    opacity: 0.82;
+}
+
+.preview-start-row,
+.preview-action-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 5px 4px 2px 18px;
+}
+
+.preview-start-row > Button {
+    flex-grow: 1;
+}
+
+.preview-action-row > Button {
+    flex-grow: 1;
+    margin-right: 4px;
+}
+
+.preview-status,
+.preview-controls {
+    margin-left: 18px;
+    margin-right: 4px;
+}
+
+.preview-controls {
+    max-height: 260px;
+}
+
+.preview-feature-card {
+    margin-top: 5px;
+    padding: 5px;
+    background-color: rgba(128, 128, 128, 0.07);
+    border-left-width: 2px;
+    border-left-color: rgba(76, 145, 200, 0.65);
+}
+
+.preview-feature-label {
+    -unity-font-style: bold;
+    margin-bottom: 3px;
+}
+
 .button-row,
 .result-actions,
 .detail-row {

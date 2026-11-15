@@ -16,6 +16,7 @@ namespace Nvh.UvTileScanner.Tests
         private GameObject _root;
         private Mesh _mesh;
         private Material _material;
+        private readonly List<Material> _previewMaterials = new List<Material>();
         private readonly List<string> _generatedFolders = new List<string>();
 
         [TearDown]
@@ -24,6 +25,9 @@ namespace Nvh.UvTileScanner.Tests
             if (_root != null) Object.DestroyImmediate(_root);
             if (_mesh != null) Object.DestroyImmediate(_mesh);
             if (_material != null) Object.DestroyImmediate(_material);
+            foreach (Material material in _previewMaterials)
+                if (material != null && !EditorUtility.IsPersistent(material)) Object.DestroyImmediate(material);
+            _previewMaterials.Clear();
             foreach (string folder in _generatedFolders)
                 AssetDatabase.DeleteAsset(folder);
             _generatedFolders.Clear();
@@ -290,6 +294,157 @@ namespace Nvh.UvTileScanner.Tests
             StringAssert.Contains("\"geometryGroup\": \"tile-a\"", manifest);
             StringAssert.Contains("\"defaultState\": \"a\"", manifest);
             Assert.That(AssetDatabase.AssetPathToGUID(output.OutputPrefabPath), Is.Not.Empty);
+
+            ManifestParseResult parsedManifest = GeometryConversionManifestJson.Parse(manifest);
+            Assert.That(parsedManifest.Success, Is.True, JoinDiagnostics(parsedManifest.Diagnostics));
+            Assert.That(parsedManifest.Manifest.renderers.Single().subMeshMappings, Has.Length.EqualTo(2));
+        }
+
+        [Test]
+        public void NoRenderAsset_IsBuiltInOnlyAndContainsNoVisibleOrDepthWritingPass()
+        {
+            string materialPath = AssetDatabase.GUIDToAssetPath("a8e39e8773144624967f9cd02fc4ecaf");
+            Material noRender = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+            Assert.That(noRender, Is.Not.Null);
+            Assert.That(noRender.name, Is.EqualTo(Path.GetFileNameWithoutExtension(materialPath)),
+                "Unity requires the material's main object name to match its asset filename.");
+            Assert.That(noRender.shader, Is.Not.Null);
+            Assert.That(noRender.shader.name, Is.EqualTo("Hidden/NVH/UVTileScanner/NoRender"));
+            Assert.That(noRender.shader.passCount, Is.EqualTo(1));
+            Assert.That(noRender.FindPass("NoRender"), Is.EqualTo(0));
+            Assert.That(noRender.GetTag("ForceNoShadowCasting", false).ToLowerInvariant(), Is.EqualTo("true"));
+
+            string shaderPath = AssetDatabase.GUIDToAssetPath("cb0c32702f284cc0afdfbc6e2e860540");
+            string source = File.ReadAllText(ToAbsolutePath(shaderPath));
+            StringAssert.Contains("ColorMask 0", source);
+            StringAssert.Contains("ZWrite Off", source);
+            StringAssert.Contains("clip(-1)", source);
+            StringAssert.DoesNotContain("ShadowCaster", source);
+            StringAssert.Contains("Fallback Off", source);
+        }
+
+        [Test]
+        public void FeaturePreview_SwitchesToggleAndExclusiveStatesFromOriginalMaterialArrays()
+        {
+            Renderer sourceRenderer = CreatePreviewAvatar(5);
+            Material[] sourceMaterials = (Material[])sourceRenderer.sharedMaterials.Clone();
+            AvatarGeometryConfiguration configuration = MakePreviewConfiguration();
+            GeometryConversionManifest manifest = MakePreviewManifest(5);
+            Material noRender = LoadNoRenderMaterial();
+
+            FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(
+                _root, configuration, manifest, noRender);
+            Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
+            FeatureVisibilityPreviewSession session = started.Session;
+            GameObject preview = session.PreviewInstance;
+            Renderer previewRenderer = preview.transform.Find("Body").GetComponent<MeshRenderer>();
+            try
+            {
+                Assert.That((preview.hideFlags & HideFlags.DontSaveInEditor) != 0, Is.True);
+                Assert.That(preview.transform.position, Is.Not.EqualTo(_root.transform.position),
+                    "A scene-source clone must not overlap and visually mask the untouched source avatar.");
+                Assert.That(started.Diagnostics.Any(item => item.Code == "PREVIEW_SCENE_CLONE_OFFSET"), Is.True);
+                Material[] defaults = previewRenderer.sharedMaterials;
+                Assert.That(defaults[0], Is.SameAs(noRender));
+                Assert.That(defaults[1], Is.SameAs(noRender));
+                Assert.That(defaults[2], Is.SameAs(sourceMaterials[2]));
+                Assert.That(defaults[3], Is.SameAs(noRender));
+                Assert.That(defaults[4], Is.SameAs(sourceMaterials[4]), "Unowned geometry must stay untouched.");
+
+                Assert.That(session.SetFeatureState("multi-toggle", "on"), Is.True);
+                Assert.That(session.SetFeatureState("mode", "right"), Is.True);
+                Material[] switched = previewRenderer.sharedMaterials;
+                Assert.That(switched[0], Is.SameAs(sourceMaterials[0]));
+                Assert.That(switched[1], Is.SameAs(sourceMaterials[1]));
+                Assert.That(switched[2], Is.SameAs(noRender));
+                Assert.That(switched[3], Is.SameAs(sourceMaterials[3]));
+                Assert.That(switched[4], Is.SameAs(sourceMaterials[4]));
+
+                session.RestoreAllMaterials();
+                CollectionAssert.AreEqual(sourceMaterials, previewRenderer.sharedMaterials);
+                session.SetFeatureState("multi-toggle", "off");
+                Material[] reapplied = previewRenderer.sharedMaterials;
+                Assert.That(reapplied[0], Is.SameAs(noRender));
+                Assert.That(reapplied[1], Is.SameAs(noRender));
+                Assert.That(reapplied[2], Is.SameAs(noRender));
+                Assert.That(reapplied[3], Is.SameAs(sourceMaterials[3]));
+
+                session.ResetToDefaults();
+                Assert.That(session.GetActiveState("multi-toggle"), Is.EqualTo("off"));
+                Assert.That(session.GetActiveState("mode"), Is.EqualTo("left"));
+            }
+            finally
+            {
+                session.EndPreview();
+            }
+
+            Assert.That(preview == null, Is.True, "End Preview must destroy its disposable instance.");
+            CollectionAssert.AreEqual(sourceMaterials, sourceRenderer.sharedMaterials,
+                "The selected source avatar must never receive preview materials.");
+        }
+
+        [Test]
+        public void FeaturePreview_ReportsMissingGroupsInvalidSlotsAndCleansFailedClone()
+        {
+            Renderer sourceRenderer = CreatePreviewAvatar(2);
+            Material[] originals = (Material[])sourceRenderer.sharedMaterials.Clone();
+            AvatarGeometryConfiguration configuration = MakePreviewConfiguration();
+            GeometryConversionManifest manifest = MakePreviewManifest(2);
+            manifest.renderers[0].subMeshMappings[1].outputSubMesh = 99;
+
+            FeaturePreviewStartResult failed = FeatureVisibilityPreviewSession.Start(
+                _root, configuration, manifest, LoadNoRenderMaterial());
+
+            Assert.That(failed.Success, Is.False);
+            Assert.That(failed.Diagnostics.Any(item => item.Code == "PREVIEW_SUBMESH_INVALID"), Is.True,
+                JoinDiagnostics(failed.Diagnostics));
+            Assert.That(Object.FindObjectsOfType<GameObject>().Any(item =>
+                item.name.Contains("[UV Feature Preview]")), Is.False);
+            CollectionAssert.AreEqual(originals, sourceRenderer.sharedMaterials);
+
+            manifest = MakePreviewManifest(2);
+            manifest.renderers[0].subMeshMappings = new[] { manifest.renderers[0].subMeshMappings[0] };
+            FeaturePreviewStartResult missing = FeatureVisibilityPreviewSession.Start(
+                _root, configuration, manifest, LoadNoRenderMaterial());
+            Assert.That(missing.Success, Is.True, JoinDiagnostics(missing.Diagnostics));
+            Assert.That(missing.Diagnostics.Any(item => item.Code == "PREVIEW_GROUP_MAPPING_MISSING"), Is.True);
+            Object.DestroyImmediate(missing.Session.PreviewInstance);
+            Assert.DoesNotThrow(() => missing.Session.EndPreview(),
+                "End Preview should tolerate a clone that the user deleted manually.");
+        }
+
+        [Test]
+        public void FeaturePreview_FromPrefabAssetLeavesPrefabMaterialsAndMeshUnchanged()
+        {
+            Renderer sourceRenderer = CreatePreviewAvatar(5);
+            Material[] originals = (Material[])sourceRenderer.sharedMaterials.Clone();
+            int[] sourceIndices = _mesh.GetIndices(0);
+            string folder = "Assets/EditorTests/FeaturePreview_" + Guid.NewGuid().ToString("N");
+            _generatedFolders.Add(folder);
+            AssetDatabase.CreateFolder("Assets/EditorTests", folder.Substring(folder.LastIndexOf('/') + 1));
+            Mesh assetMesh = Object.Instantiate(_mesh);
+            string meshPath = folder + "/ConvertedMesh.asset";
+            AssetDatabase.CreateAsset(assetMesh, meshPath);
+            sourceRenderer.GetComponent<MeshFilter>().sharedMesh = assetMesh;
+            sourceIndices = assetMesh.GetIndices(0);
+            for (int index = 0; index < originals.Length; index++)
+                AssetDatabase.CreateAsset(originals[index], folder + "/Material" + index + ".mat");
+            string prefabPath = folder + "/Converted.prefab";
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(_root, prefabPath);
+            Assert.That(prefab, Is.Not.Null);
+
+            FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(prefab,
+                MakePreviewConfiguration(), MakePreviewManifest(5), LoadNoRenderMaterial());
+            Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
+            started.Session.SetFeatureState("multi-toggle", "on");
+            started.Session.EndPreview();
+
+            GameObject reloaded = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            Renderer prefabRenderer = reloaded.transform.Find("Body").GetComponent<MeshRenderer>();
+            CollectionAssert.AreEqual(originals, prefabRenderer.sharedMaterials);
+            CollectionAssert.AreEqual(sourceIndices,
+                prefabRenderer.GetComponent<MeshFilter>().sharedMesh.GetIndices(0));
+            CollectionAssert.AreEqual(originals, sourceRenderer.sharedMaterials);
         }
 
         [Test]
@@ -343,6 +498,136 @@ namespace Nvh.UvTileScanner.Tests
 
             Assert.That(report.HasErrors, Is.False, JoinDiagnostics(report.Diagnostics));
             Assert.That(report.Renderers.Single().SourceMesh, Is.SameAs(scan.Meshes.Single().Mesh));
+        }
+
+        private Renderer CreatePreviewAvatar(int slotCount)
+        {
+            _root = new GameObject("Converted Avatar");
+            var body = new GameObject("Body");
+            body.transform.SetParent(_root.transform);
+            _mesh = new Mesh { name = "Converted Preview Mesh" };
+            _mesh.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+            _mesh.subMeshCount = slotCount;
+            for (int slot = 0; slot < slotCount; slot++)
+                _mesh.SetTriangles(new[] { 0, 1, 2 }, slot);
+            body.AddComponent<MeshFilter>().sharedMesh = _mesh;
+            MeshRenderer renderer = body.AddComponent<MeshRenderer>();
+            Shader shader = Shader.Find("Hidden/InternalErrorShader");
+            var materials = new Material[slotCount];
+            for (int slot = 0; slot < slotCount; slot++)
+            {
+                materials[slot] = new Material(shader) { name = "Preview Source " + slot };
+                _previewMaterials.Add(materials[slot]);
+            }
+            renderer.sharedMaterials = materials;
+            return renderer;
+        }
+
+        private static AvatarGeometryConfiguration MakePreviewConfiguration()
+        {
+            return new AvatarGeometryConfiguration
+            {
+                Avatar = new AvatarConfiguration { Name = "Converted Avatar" },
+                GeometryGroups = new List<GeometryGroupConfiguration>
+                {
+                    new GeometryGroupConfiguration { Id = "group-a" },
+                    new GeometryGroupConfiguration { Id = "group-b" },
+                    new GeometryGroupConfiguration { Id = "group-left" },
+                    new GeometryGroupConfiguration { Id = "group-right" },
+                    new GeometryGroupConfiguration { Id = "unowned" }
+                },
+                Features = new List<FeatureConfiguration>
+                {
+                    new FeatureConfiguration
+                    {
+                        Id = "multi-toggle", Type = GeometryFeatureType.Toggle, DefaultState = "off",
+                        OwnedGroups = new List<string> { "group-a", "group-b" },
+                        States = new List<FeatureStateConfiguration>
+                        {
+                            new FeatureStateConfiguration
+                            {
+                                Id = "on", VisibleGroups = new List<string> { "group-a", "group-b" }
+                            },
+                            new FeatureStateConfiguration { Id = "off", VisibleGroups = new List<string>() }
+                        }
+                    },
+                    new FeatureConfiguration
+                    {
+                        Id = "mode", Type = GeometryFeatureType.Exclusive, DefaultState = "left",
+                        OwnedGroups = new List<string> { "group-left", "group-right" },
+                        States = new List<FeatureStateConfiguration>
+                        {
+                            new FeatureStateConfiguration
+                            {
+                                Id = "left", VisibleGroups = new List<string> { "group-left" }
+                            },
+                            new FeatureStateConfiguration
+                            {
+                                Id = "right", VisibleGroups = new List<string> { "group-right" }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        private static GeometryConversionManifest MakePreviewManifest(int mappingCount)
+        {
+            string[] groups = { "group-a", "group-b", "group-left", "group-right", "unowned" };
+            var mappings = new List<ManifestSubMeshMapping>();
+            for (int index = 0; index < mappingCount && index < groups.Length; index++)
+                mappings.Add(new ManifestSubMeshMapping
+                {
+                    outputSubMesh = index,
+                    sourceSubMesh = index,
+                    sourceMaterialSlot = index,
+                    geometryGroup = groups[index],
+                    triangleCount = 1
+                });
+            AvatarGeometryConfiguration configuration = MakePreviewConfiguration();
+            var features = new List<ManifestFeature>();
+            foreach (FeatureConfiguration feature in configuration.Features)
+            {
+                var states = new List<ManifestFeatureState>();
+                foreach (FeatureStateConfiguration state in feature.States)
+                    states.Add(new ManifestFeatureState
+                    {
+                        id = state.Id,
+                        visibleGroups = state.VisibleGroups.ToArray()
+                    });
+                features.Add(new ManifestFeature
+                {
+                    id = feature.Id,
+                    type = feature.Type == GeometryFeatureType.Toggle ? "toggle" : "exclusive",
+                    defaultState = feature.DefaultState,
+                    ownedGroups = feature.OwnedGroups.ToArray(),
+                    states = states.ToArray()
+                });
+            }
+            return new GeometryConversionManifest
+            {
+                manifestVersion = GeometryConversionOutput.ManifestVersion,
+                configurationSchemaVersion = GeometryConfigurationYaml.SupportedSchemaVersion,
+                configuredAvatarName = "Converted Avatar",
+                renderers = new[]
+                {
+                    new ManifestRenderer
+                    {
+                        rendererPath = "Body",
+                        rendererType = "MeshRenderer",
+                        subMeshMappings = mappings.ToArray()
+                    }
+                },
+                features = features.ToArray()
+            };
+        }
+
+        private static Material LoadNoRenderMaterial()
+        {
+            string path = AssetDatabase.GUIDToAssetPath("a8e39e8773144624967f9cd02fc4ecaf");
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            Assert.That(material, Is.Not.Null);
+            return material;
         }
 
         private MeshRenderer CreateStaticAvatar(Mesh mesh, int materialSlots = 1)

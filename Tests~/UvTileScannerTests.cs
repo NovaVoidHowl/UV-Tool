@@ -153,6 +153,14 @@ namespace Nvh.UvTileScanner.Tests
                 Assert.That(cancelButton, Is.Not.Null);
                 Assert.That(cancelButton.text, Is.EqualTo("Cancel scan"));
                 Assert.That(window.rootVisualElement.Q<ScrollView>("results-scroll"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ObjectField>("preview-avatar-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ObjectField>("preview-config-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ObjectField>("preview-manifest-field"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<ScrollView>("preview-controls"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Button>("start-preview-button"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Button>("reset-preview-button"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Button>("restore-preview-button"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Button>("end-preview-button"), Is.Not.Null);
                 Label versionBadge = window.rootVisualElement.Q<Label>("tool-version");
                 PackageManagerInfo package = PackageManagerInfo.FindForAssembly(typeof(UvTileScannerWindow).Assembly);
                 Assert.That(package, Is.Not.Null);
