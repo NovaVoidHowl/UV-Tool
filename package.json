@@ -1,6 +1,6 @@
 {
   "name": "uk.novavoidhowl.dev.uv-tile-scanner",
-  "version": "1.7.0",
+  "version": "1.8.1",
   "displayName": "UV Tile Scanner",
   "description": "Editor tool that audits avatar UV data, performs YAML-driven geometry partitioning, and previews configured feature visibility non-destructively.",
   "unity": "2021.3",

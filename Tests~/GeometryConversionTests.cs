@@ -333,7 +333,7 @@ namespace Nvh.UvTileScanner.Tests
             Material noRender = LoadNoRenderMaterial();
 
             FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(
-                _root, configuration, manifest, noRender);
+                _root, configuration, manifest, noRender, PreviewMaterialMode.Original);
             Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
             FeatureVisibilityPreviewSession session = started.Session;
             GameObject preview = session.PreviewInstance;
@@ -436,7 +436,11 @@ namespace Nvh.UvTileScanner.Tests
             FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(prefab,
                 MakePreviewConfiguration(), MakePreviewManifest(5), LoadNoRenderMaterial());
             Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
-            started.Session.SetFeatureState("multi-toggle", "on");
+            foreach (PreviewMaterialMode mode in Enum.GetValues(typeof(PreviewMaterialMode)))
+            {
+                started.Session.SetMaterialMode(mode);
+                started.Session.SetFeatureState("multi-toggle", "on");
+            }
             started.Session.EndPreview();
 
             GameObject reloaded = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
@@ -445,6 +449,299 @@ namespace Nvh.UvTileScanner.Tests
             CollectionAssert.AreEqual(sourceIndices,
                 prefabRenderer.GetComponent<MeshFilter>().sharedMesh.GetIndices(0));
             CollectionAssert.AreEqual(originals, sourceRenderer.sharedMaterials);
+        }
+
+        [TestCase(PreviewMaterialMode.Original)]
+        [TestCase(PreviewMaterialMode.Fallback)]
+        [TestCase(PreviewMaterialMode.Diagnostic)]
+        public void PreviewModes_PreserveStatesManifestOrderingAndUnownedGeometry(PreviewMaterialMode mode)
+        {
+            Renderer source = CreatePreviewAvatar(5);
+            Material[] original = source.sharedMaterials;
+            // Shared sources must still produce independent diagnostic groups.
+            source.sharedMaterials = Enumerable.Repeat(original[0], 5).ToArray();
+            var manifest = MakePreviewManifest(5);
+            manifest.renderers[0].subMeshMappings[0].outputSubMesh = 1;
+            manifest.renderers[0].subMeshMappings[1].outputSubMesh = 0;
+            Material noRender = LoadNoRenderMaterial();
+            var started = FeatureVisibilityPreviewSession.Start(_root, MakePreviewConfiguration(), manifest, noRender);
+            Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
+            using (var session = started.Session)
+            {
+                Assert.That(session.MaterialMode, Is.EqualTo(PreviewMaterialMode.Fallback));
+                var renderer = session.PreviewInstance.transform.Find("Body").GetComponent<Renderer>();
+                session.SetFeatureState("multi-toggle", "on");
+                session.SetFeatureState("mode", "right");
+                session.SetMaterialMode(mode);
+                Assert.That(session.GetActiveState("multi-toggle"), Is.EqualTo("on"));
+                Assert.That(session.GetActiveState("mode"), Is.EqualTo("right"));
+                Material[] materials = renderer.sharedMaterials;
+                Assert.That(materials[2], Is.SameAs(noRender));
+                foreach (int slot in new[] { 0, 1, 3, 4 }) Assert.That(materials[slot], Is.Not.SameAs(noRender));
+                if (mode == PreviewMaterialMode.Original) Assert.That(materials[0], Is.SameAs(original[0]));
+                if (mode == PreviewMaterialMode.Fallback)
+                {
+                    Assert.That(materials[0], Is.SameAs(materials[1]));
+                    Assert.That(materials[0].shader.name, Is.EqualTo("Standard"));
+                }
+                if (mode == PreviewMaterialMode.Diagnostic)
+                {
+                    Assert.That(materials[0], Is.Not.SameAs(materials[1]));
+                    Assert.That(materials[1].color, Is.EqualTo(PreviewMaterialCache.GroupColour("group-a")));
+                    Assert.That(materials[0].HasProperty("_MainTex"), Is.False);
+                    Assert.That(session.Legend.First(e => e.GroupId == "group-a").OutputSubMesh, Is.EqualTo(1));
+                }
+                session.SetFeatureState("multi-toggle", "off");
+                Assert.That(renderer.sharedMaterials[0], Is.SameAs(noRender));
+                Assert.That(renderer.sharedMaterials[1], Is.SameAs(noRender));
+                session.SetFeatureState("multi-toggle", "on");
+                Assert.That(renderer.sharedMaterials[0], Is.SameAs(materials[0]));
+                session.EndPreview(); session.EndPreview();
+                if (mode != PreviewMaterialMode.Original) Assert.That(materials[0] == null, Is.True);
+                Assert.That(original[0] != null, Is.True);
+                CollectionAssert.AreEqual(Enumerable.Repeat(original[0], 5), source.sharedMaterials);
+            }
+        }
+
+        [Test]
+        public void PreviewMaterials_CopyStandardAppearanceAndReleaseOnlyGeneratedMaterials()
+        {
+            var source = new Material(Shader.Find("Standard"));
+            var texture = new Texture2D(2, 2);
+            Material generated = null;
+            Material diagnostic = null;
+            try
+            {
+                source.color = new Color(.2f, .4f, .6f, .5f);
+                source.SetTexture("_MainTex", texture);
+                source.SetTextureScale("_MainTex", new Vector2(2, 3));
+                source.SetTextureOffset("_MainTex", new Vector2(.1f, .2f));
+                source.SetFloat("_Metallic", .7f); source.SetFloat("_Glossiness", .3f);
+                source.SetTexture("_BumpMap", texture); source.SetTexture("_MetallicGlossMap", texture);
+                source.SetTexture("_EmissionMap", texture); source.SetColor("_EmissionColor", Color.red);
+                source.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+                source.SetFloat("_Mode", 1); source.SetFloat("_Cutoff", .4f);
+                using (var cache = new PreviewMaterialCache())
+                {
+                    generated = cache.Fallback(source);
+                    Assert.That(cache.Fallback(source), Is.SameAs(generated));
+                    Assert.That(generated.color, Is.EqualTo(source.color));
+                    Assert.That(generated.GetTexture("_MainTex"), Is.SameAs(texture));
+                    Assert.That(generated.GetTextureScale("_MainTex"), Is.EqualTo(new Vector2(2, 3)));
+                    Assert.That(generated.GetTextureOffset("_MainTex"), Is.EqualTo(new Vector2(.1f, .2f)));
+                    Assert.That(generated.GetFloat("_Metallic"), Is.EqualTo(.7f));
+                    Assert.That(generated.GetFloat("_Glossiness"), Is.EqualTo(.3f));
+                    Assert.That(generated.IsKeywordEnabled("_NORMALMAP"), Is.True);
+                    Assert.That(generated.IsKeywordEnabled("_METALLICGLOSSMAP"), Is.True);
+                    Assert.That(generated.IsKeywordEnabled("_EMISSION"), Is.True);
+                    Assert.That(generated.IsKeywordEnabled("_ALPHATEST_ON"), Is.True);
+                    Assert.That(generated.GetFloat("_Cutoff"), Is.EqualTo(.4f));
+                    Assert.That(AssetDatabase.GetAssetPath(generated), Is.Empty);
+                    diagnostic = cache.Diagnostic("group-a");
+                    Assert.That(cache.Diagnostic("group-a"), Is.SameAs(diagnostic));
+                    using (var other = new PreviewMaterialCache())
+                        Assert.That(other.Diagnostic("group-a").color, Is.EqualTo(diagnostic.color));
+                    Assert.That(cache.Diagnostic("group-b").color, Is.Not.EqualTo(diagnostic.color));
+                }
+                Assert.That(generated == null && diagnostic == null, Is.True);
+                Assert.That(source.color, Is.EqualTo(new Color(.2f, .4f, .6f, .5f)));
+                Assert.That(source.GetTexture("_MainTex"), Is.SameAs(texture));
+            }
+            finally { Object.DestroyImmediate(source); Object.DestroyImmediate(texture); }
+        }
+
+        [TestCase("Hidden/NVH/UVTileScanner/NoRender")]
+        [TestCase(".poiyomi/Poiyomi Toon Synthetic")]
+        public void PreviewMaterials_TolerateNullAndUnfamiliarProperties(string shaderName)
+        {
+            var source = new Material(Shader.Find(shaderName));
+            try
+            {
+                using (var cache = new PreviewMaterialCache())
+                {
+                    Material missing = cache.Fallback(null);
+                    Assert.That(cache.Fallback(null), Is.SameAs(missing));
+                    Assert.That(missing.color, Is.EqualTo(Color.magenta));
+                    Material unfamiliar = cache.Fallback(source);
+                    Assert.That(unfamiliar.shader.name, Is.EqualTo("Standard"));
+                    Assert.That(unfamiliar.color, Is.EqualTo(Color.magenta));
+                    Assert.That(cache.Warnings.Count, Is.GreaterThanOrEqualTo(2));
+                }
+            }
+            finally { Object.DestroyImmediate(source); }
+        }
+
+        [TestCase("Standard", MaterialGlobalIlluminationFlags.EmissiveIsBlack, false)]
+        [TestCase("Standard", MaterialGlobalIlluminationFlags.None, true)]
+        [TestCase("Standard", MaterialGlobalIlluminationFlags.BakedEmissive, true)]
+        [TestCase("Hidden/NVH/Tests/UnfamiliarEmission", MaterialGlobalIlluminationFlags.EmissiveIsBlack, false)]
+        [TestCase("Hidden/NVH/Tests/UnfamiliarEmission", MaterialGlobalIlluminationFlags.None, true)]
+        public void PreviewEmission_MatchesStandardValidationBeforeFirstAssignment(string shaderName,
+            MaterialGlobalIlluminationFlags flags, bool expectedEmission)
+        {
+            var source = new Material(Shader.Find(shaderName));
+            var texture = new Texture2D(2, 2);
+            try
+            {
+                source.SetColor("_EmissionColor", new Color(.75f, 1.24f, 3f, 1));
+                source.SetTexture("_EmissionMap", texture);
+                source.globalIlluminationFlags = flags;
+                string original = EditorJsonUtility.ToJson(source);
+                using (var cache = new PreviewMaterialCache())
+                {
+                    Material material = cache.Fallback(source);
+                    Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.EqualTo(expectedEmission),
+                        "Stored HDR colours/maps alone must not enable an explicitly disabled emission effect.");
+                    Assert.That(material.GetTexture("_EmissionMap"), Is.SameAs(texture));
+                    string initialized = EditorJsonUtility.ToJson(material);
+                    CreateStandardValidator().ValidateMaterial(material);
+                    Assert.That(EditorJsonUtility.ToJson(material), Is.EqualTo(initialized),
+                        "Subsequent Standard validation must not change generated rendering state.");
+                    if (!expectedEmission) Assert.That(cache.Warnings.Any(w => w.Contains("emission is disabled")), Is.True);
+                }
+                Assert.That(EditorJsonUtility.ToJson(source), Is.EqualTo(original));
+            }
+            finally { Object.DestroyImmediate(source); Object.DestroyImmediate(texture); }
+        }
+
+        [Test]
+        public void PreviewEmission_UnrelatedImportInCleanProjectDoesNotChangeInitializedMaterial()
+        {
+            var source = new Material(Shader.Find("Standard"));
+            try
+            {
+                source.SetColor("_EmissionColor", new Color(.75f, 1.24f, 3f, 1));
+                source.globalIlluminationFlags = MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+                using (var cache = new PreviewMaterialCache())
+                {
+                    Material material = cache.Fallback(source);
+                    string before = EditorJsonUtility.ToJson(material);
+                    AssetDatabase.ImportAsset("Assets/EditorTests/Fixtures/NawvaroFT.yaml", ImportAssetOptions.ForceUpdate);
+                    Assert.That(EditorJsonUtility.ToJson(material), Is.EqualTo(before));
+                    Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.False);
+                }
+            }
+            finally { Object.DestroyImmediate(source); }
+        }
+
+        [Test]
+        public void PreviewEmission_StandardValidationNormalizesLegacyInconsistentState()
+        {
+            var material = new Material(Shader.Find("Standard")) { hideFlags = HideFlags.HideAndDontSave };
+            try
+            {
+                material.SetColor("_EmissionColor", new Color(.75f, 1.24f, 3f, 1));
+                material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+                material.EnableKeyword("_EMISSION");
+                Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.True);
+                CreateStandardValidator().ValidateMaterial(material);
+                Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.False,
+                    "Control: Standard validation removes the inconsistent keyword without any third-party tooling.");
+            }
+            finally { Object.DestroyImmediate(material); }
+        }
+
+        [Test]
+        public void PreviewEmission_BlackBakedEmissionIsNormalizedWithoutChangingSource()
+        {
+            var source = new Material(Shader.Find("Standard"));
+            try
+            {
+                source.SetColor("_EmissionColor", Color.black);
+                source.globalIlluminationFlags = MaterialGlobalIlluminationFlags.BakedEmissive;
+                using (var cache = new PreviewMaterialCache())
+                {
+                    Material material = cache.Fallback(source);
+                    Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.False);
+                    Assert.That((material.globalIlluminationFlags & MaterialGlobalIlluminationFlags.EmissiveIsBlack) != 0, Is.True);
+                    string before = EditorJsonUtility.ToJson(material);
+                    CreateStandardValidator().ValidateMaterial(material);
+                    Assert.That(EditorJsonUtility.ToJson(material), Is.EqualTo(before));
+                }
+                Assert.That(source.globalIlluminationFlags, Is.EqualTo(MaterialGlobalIlluminationFlags.BakedEmissive));
+            }
+            finally { Object.DestroyImmediate(source); }
+        }
+
+        // Reflection is confined to tests: StandardShaderGUI is internal in Unity 2022.3.
+        private static ShaderGUI CreateStandardValidator() => (ShaderGUI)Activator.CreateInstance(
+            typeof(MaterialEditor).Assembly.GetType("UnityEditor.StandardShaderGUI", true));
+
+        [TestCase(2, "_ALPHABLEND_ON", UnityEngine.Rendering.BlendMode.SrcAlpha)]
+        [TestCase(3, "_ALPHAPREMULTIPLY_ON", UnityEngine.Rendering.BlendMode.One)]
+        public void PreviewMaterials_PreserveStandardTransparency(int mode, string keyword,
+            UnityEngine.Rendering.BlendMode blend)
+        {
+            var source = new Material(Shader.Find("Standard"));
+            try
+            {
+                source.SetFloat("_Mode", mode);
+                using (var cache = new PreviewMaterialCache())
+                {
+                    var material = cache.Fallback(source);
+                    Assert.That(material.IsKeywordEnabled(keyword), Is.True);
+                    Assert.That(material.GetInt("_SrcBlend"), Is.EqualTo((int)blend));
+                    Assert.That(material.GetInt("_ZWrite"), Is.Zero);
+                    Assert.That(material.renderQueue, Is.EqualTo(3000));
+                }
+            }
+            finally { Object.DestroyImmediate(source); }
+        }
+
+        [Test]
+        public void Preview_NullSourcesAndUnassignedGeometryRemainUsable()
+        {
+            Renderer source = CreatePreviewAvatar(5);
+            source.sharedMaterials = new Material[5];
+            var manifest = MakePreviewManifest(5);
+            manifest.renderers[0].subMeshMappings[4].unassigned = true;
+            var noRender = LoadNoRenderMaterial();
+            var started = FeatureVisibilityPreviewSession.Start(_root, MakePreviewConfiguration(), manifest, noRender);
+            Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
+            using (var session = started.Session)
+            {
+                var renderer = session.PreviewInstance.transform.Find("Body").GetComponent<Renderer>();
+                Assert.That(renderer.sharedMaterials[4].color, Is.EqualTo(Color.magenta));
+                session.SetMaterialMode(PreviewMaterialMode.Diagnostic);
+                Assert.That(renderer.sharedMaterials[4].color, Is.EqualTo(Color.gray));
+                Assert.That(renderer.sharedMaterials[0], Is.SameAs(noRender));
+                session.SetMaterialMode(PreviewMaterialMode.Original);
+                Assert.That(renderer.sharedMaterials[4], Is.Null);
+            }
+            CollectionAssert.AreEqual(new Material[5], source.sharedMaterials);
+        }
+
+        [Test]
+        public void Preview_InvalidModeStartupReleasesCloneAndCallbacks()
+        {
+            CreatePreviewAvatar(5);
+            var started = FeatureVisibilityPreviewSession.Start(_root, MakePreviewConfiguration(),
+                MakePreviewManifest(5), LoadNoRenderMaterial(), (PreviewMaterialMode)999);
+            Assert.That(started.Success, Is.False);
+            Assert.That(started.Diagnostics.Any(d => d.Code == "PREVIEW_START_FAILED"), Is.True);
+            Assert.That(Object.FindObjectsOfType<GameObject>().Any(o => o.name.Contains("[UV Feature Preview]")), Is.False);
+        }
+
+        [Test]
+        public void Preview_WindowDisableReleasesSessionMaterials()
+        {
+            CreatePreviewAvatar(5);
+            var started = FeatureVisibilityPreviewSession.Start(_root, MakePreviewConfiguration(),
+                MakePreviewManifest(5), LoadNoRenderMaterial());
+            Assert.That(started.Success, Is.True, JoinDiagnostics(started.Diagnostics));
+            var window = ScriptableObject.CreateInstance<UvTileScannerWindow>();
+            var session = started.Session;
+            var material = session.PreviewInstance.transform.Find("Body").GetComponent<Renderer>().sharedMaterials[2];
+            try
+            {
+                typeof(UvTileScannerWindow).GetField("_previewSession", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .SetValue(window, session);
+                typeof(UvTileScannerWindow).GetMethod("OnDisable", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Invoke(window, null);
+                Assert.That(session.IsActive, Is.False);
+                Assert.That(material == null, Is.True);
+            }
+            finally { session.Dispose(); Object.DestroyImmediate(window); }
         }
 
         [Test]

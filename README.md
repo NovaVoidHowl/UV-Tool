@@ -79,7 +79,7 @@ Do not copy only `Nvh.UvTileScanner.Editor.dll`; it requires the core/conversion
 
 ## Using the scanner
 
-1. Open **NVH > UV Tile Scanner**.
+1. Open **NVH > UV Tile Scanner > Scanner**.
 2. Assign the avatar's root GameObject to **Avatar root**.
 3. Choose whether inactive objects should be included.
 4. Enable **Search whole project for animations** only when you also want potential matches from clips outside the avatar's controllers.
@@ -295,7 +295,7 @@ The build intentionally references Unity's managed facade assemblies to retain c
 - cloned mesh skinning/blendshape/bounds preservation, non-destructive prefab output, manifest mappings, template export, detector independence, and scanner-report integration.
 - feature toggle/exclusive-state switching, multi-group ownership, complete material restoration, cleanup, NoRender configuration, and prefab/mesh/material non-mutation.
 
-The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 49 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
+The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 68 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
 
 To run the suite with the checked-out validation project, use `make test` as described above. To run the tests in another project manually, copy `Tests~` into that project's `Assets` directory or temporarily remove the trailing `~` so Unity imports the test assembly and fixtures.
 

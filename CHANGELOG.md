@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0 - 2026-11-19 - (plan H - Imp A)
+
+- Fixed fallback emission initialization: preserve source GI flags and synchronize `_EMISSION` with Standard validation before assignment, avoiding bright emission that changed after unrelated imports.
+- Added opt-in session-only asset/project/reload/material tracing and emission validation regression coverage.
+- Default feature previews to cached temporary Standard fallback materials with conservative exposed-property mapping and translation warnings.
+- Added Original/Fallback/Diagnostic mode selection without changing YAML states, deterministic untextured geometry-group colours and a manifest-based legend.
+- Release generated materials on End Preview, window closure, assembly reload, Editor quit and failed startup. Source materials, meshes and prefab assets remain unchanged.
+- Added synthetic Edit Mode coverage for material generation, reuse, visibility across modes, mapping and cleanup.
+
 ## 1.7.0 - 2026-11-15 - (plan H - Imp A)
 
 - Added a YAML/manifest-driven feature visibility preview using a disposable converted-avatar scene clone.

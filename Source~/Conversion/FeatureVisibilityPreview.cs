@@ -32,6 +32,20 @@ namespace Nvh.UvTileScanner.Conversion
         private readonly Dictionary<string, List<PreviewSlot>> _slotsByGroup;
         private readonly Dictionary<string, string> _activeStates;
         private bool _disposed;
+        private readonly PreviewMaterialCache _materials = new PreviewMaterialCache();
+        private readonly List<PreviewLegendEntry> _legend = new List<PreviewLegendEntry>();
+        public PreviewMaterialMode MaterialMode { get; private set; }
+        public IReadOnlyList<string> MaterialWarnings => _materials.Warnings;
+        public IReadOnlyList<PreviewLegendEntry> Legend => _legend.AsReadOnly();
+
+        public void SetMaterialMode(PreviewMaterialMode mode)
+        {
+            ThrowIfDisposed();
+            if (!Enum.IsDefined(typeof(PreviewMaterialMode), mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+            MaterialMode = mode;
+            try { ApplyCurrentStates(); }
+            catch { EndPreview(); throw; }
+        }
 
         private FeatureVisibilityPreviewSession(GameObject previewInstance,
             AvatarGeometryConfiguration configuration, Material noRenderMaterial,
@@ -45,6 +59,7 @@ namespace Nvh.UvTileScanner.Conversion
             _originalMaterials = originalMaterials;
             _slotsByGroup = slotsByGroup;
             _activeStates = activeStates;
+            PreviewMaterialDiagnostics.Register(this);
         }
 
         public GameObject PreviewInstance { get; private set; }
@@ -53,7 +68,7 @@ namespace Nvh.UvTileScanner.Conversion
 
         public static FeaturePreviewStartResult Start(GameObject convertedAvatar,
             AvatarGeometryConfiguration configuration, GeometryConversionManifest manifest,
-            Material noRenderMaterial)
+            Material noRenderMaterial, PreviewMaterialMode materialMode = PreviewMaterialMode.Fallback)
         {
             var diagnostics = new List<ConversionDiagnostic>();
             if (convertedAvatar == null)
@@ -75,6 +90,7 @@ namespace Nvh.UvTileScanner.Conversion
                 return new FeaturePreviewStartResult(null, diagnostics);
 
             GameObject instance = null;
+            FeatureVisibilityPreviewSession session = null;
             try
             {
                 instance = InstantiatePreview(convertedAvatar);
@@ -90,6 +106,8 @@ namespace Nvh.UvTileScanner.Conversion
                 }
                 var originals = new Dictionary<Renderer, Material[]>();
                 var groups = ResolveMappings(instance, manifest, originals, diagnostics);
+                foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
+                    if (!originals.ContainsKey(renderer)) originals.Add(renderer, Clone(renderer.sharedMaterials));
                 ValidateFeatureDefinitions(configuration, manifest, groups, diagnostics);
                 var activeStates = new Dictionary<string, string>(StringComparer.Ordinal);
                 foreach (FeatureConfiguration feature in configuration.Features ?? new List<FeatureConfiguration>())
@@ -109,14 +127,18 @@ namespace Nvh.UvTileScanner.Conversion
                     return new FeaturePreviewStartResult(null, diagnostics);
                 }
 
-                var session = new FeatureVisibilityPreviewSession(instance, configuration,
+                session = new FeatureVisibilityPreviewSession(instance, configuration,
                     noRenderMaterial, originals, groups, activeStates);
-                session.ApplyCurrentStates();
+                session.BuildLegend(manifest);
+                AssemblyReloadEvents.beforeAssemblyReload += session.EndPreview;
+                EditorApplication.quitting += session.EndPreview;
+                session.SetMaterialMode(materialMode);
                 return new FeaturePreviewStartResult(session, diagnostics);
             }
             catch (Exception exception)
             {
-                if (instance != null) UnityEngine.Object.DestroyImmediate(instance);
+                if (session != null) session.EndPreview();
+                else if (instance != null) UnityEngine.Object.DestroyImmediate(instance);
                 diagnostics.Add(Error("PREVIEW_START_FAILED", exception.Message));
                 return new FeaturePreviewStartResult(null, diagnostics);
             }
@@ -167,6 +189,17 @@ namespace Nvh.UvTileScanner.Conversion
             foreach (KeyValuePair<Renderer, Material[]> entry in _originalMaterials)
                 if (entry.Key != null) recomputed.Add(entry.Key, Clone(entry.Value));
 
+            foreach (var entry in recomputed)
+                for (int i = 0; i < entry.Value.Length; i++)
+                    if (MaterialMode != PreviewMaterialMode.Original)
+                        entry.Value[i] = MaterialMode == PreviewMaterialMode.Fallback
+                            ? _materials.Fallback(entry.Value[i]) : _materials.Unmapped();
+            if (MaterialMode == PreviewMaterialMode.Diagnostic)
+                foreach (var group in _slotsByGroup)
+                    foreach (var slot in group.Value)
+                        if (slot.Renderer != null && recomputed.TryGetValue(slot.Renderer, out Material[] array))
+                            array[slot.MaterialSlot] = _materials.Diagnostic(group.Key);
+
             HashSet<string> hiddenGroups = GetHiddenGroups();
             foreach (string group in hiddenGroups)
             {
@@ -178,19 +211,41 @@ namespace Nvh.UvTileScanner.Conversion
             }
             foreach (KeyValuePair<Renderer, Material[]> entry in recomputed)
                 if (entry.Key != null) entry.Key.sharedMaterials = entry.Value;
+            PreviewMaterialDiagnostics.Capture("preview material assignment complete");
         }
 
         public void EndPreview()
         {
             if (_disposed) return;
-            foreach (KeyValuePair<Renderer, Material[]> entry in _originalMaterials)
-                if (entry.Key != null) entry.Key.sharedMaterials = Clone(entry.Value);
+            PreviewMaterialDiagnostics.Capture("EndPreview");
+            PreviewMaterialDiagnostics.Unregister(this);
+            AssemblyReloadEvents.beforeAssemblyReload -= EndPreview;
+            EditorApplication.quitting -= EndPreview;
             if (PreviewInstance != null) UnityEngine.Object.DestroyImmediate(PreviewInstance);
             PreviewInstance = null;
+            _materials.Dispose();
             _disposed = true;
         }
 
         public void Dispose() => EndPreview();
+
+        private void BuildLegend(GeometryConversionManifest manifest)
+        {
+            foreach (var renderer in manifest.renderers ?? Array.Empty<ManifestRenderer>())
+            {
+                if (renderer == null) continue;
+                foreach (var mapping in renderer.subMeshMappings ?? Array.Empty<ManifestSubMeshMapping>())
+                {
+                    if (mapping == null || mapping.unassigned || string.IsNullOrEmpty(mapping.geometryGroup)) continue;
+                    string tiles = "unknown";
+                    foreach (var group in _configuration.GeometryGroups ?? new List<GeometryGroupConfiguration>())
+                        if (group != null && group.Id == mapping.geometryGroup && group.Tiles != null && group.Tiles.Count > 0)
+                            tiles = string.Join(", ", group.Tiles);
+                    _legend.Add(new PreviewLegendEntry(mapping.geometryGroup, renderer.rendererPath,
+                        mapping.sourceMaterialSlot, mapping.outputSubMesh, tiles));
+                }
+            }
+        }
 
         private HashSet<string> GetHiddenGroups()
         {
@@ -306,7 +361,7 @@ namespace Nvh.UvTileScanner.Conversion
                     if (originalMaterial == null)
                         diagnostics.Add(Warning("PREVIEW_MATERIAL_MISSING",
                             $"Group '{mapping.geometryGroup}' uses an unassigned material at " +
-                            $"'{DisplayPath(rendererMapping.rendererPath)}' slot {mapping.outputSubMesh}; null will be restored when visible."));
+                            $"'{DisplayPath(rendererMapping.rendererPath)}' slot {mapping.outputSubMesh}; Original mode retains null; Fallback supplies an identifiable material."));
                     else if (originalMaterial.shader == null || !originalMaterial.shader.isSupported)
                         diagnostics.Add(Warning("PREVIEW_MATERIAL_UNSUPPORTED",
                             $"Material '{originalMaterial.name}' at '{DisplayPath(rendererMapping.rendererPath)}' " +

@@ -92,7 +92,7 @@ namespace Nvh.UvTileScanner
             internal VisualElement Body;
         }
 
-        [MenuItem("NVH/UV Tile Scanner")]
+        [MenuItem("NVH/UV Tile Scanner/Scanner")]
         public static void Open()
         {
             GetWindow<UvTileScannerWindow>(WindowTitle).minSize = new Vector2(520f, 340f);
@@ -1596,7 +1596,7 @@ namespace Nvh.UvTileScanner
 
             Material noRender = LoadAssetByGuid<Material>(NoRenderMaterialGuid);
             FeaturePreviewStartResult started = FeatureVisibilityPreviewSession.Start(
-                _previewAvatarSource, configuration.Configuration, manifest.Manifest, noRender);
+                _previewAvatarSource, configuration.Configuration, manifest.Manifest, noRender, _previewMaterialMode);
             _previewDiagnostics.AddRange(started.Diagnostics);
             _previewSession = started.Session;
             if (_previewSession != null)
@@ -1637,6 +1637,8 @@ namespace Nvh.UvTileScanner
             if (_previewControls != null) RefreshPreviewControls();
         }
 
+        private PreviewMaterialMode _previewMaterialMode = PreviewMaterialMode.Fallback;
+
         private void RefreshPreviewControls()
         {
             if (_previewStatus == null || _previewControls == null)
@@ -1659,7 +1661,42 @@ namespace Nvh.UvTileScanner
                 AddPreviewMessage(_previewStatusMessage, ConversionDiagnosticSeverity.Info);
             foreach (ConversionDiagnostic diagnostic in _previewDiagnostics)
                 AddPreviewMessage(diagnostic.ToString(), diagnostic.Severity);
+            var mode = new EnumField("Materials", _previewMaterialMode);
+            mode.RegisterValueChangedCallback(evt =>
+            {
+                _previewMaterialMode = (PreviewMaterialMode)evt.newValue;
+                if (_previewSession != null && _previewSession.IsActive)
+                    _previewSession.SetMaterialMode(_previewMaterialMode);
+                RefreshPreviewControls();
+            });
+            _previewControls.Add(mode);
+            var description = new HelpBox(_previewMaterialMode == PreviewMaterialMode.Original
+                ? "Original materials: shader UV discard/dissolve can prevent visible groups from appearing."
+                : _previewMaterialMode == PreviewMaterialMode.Fallback
+                    ? "Temporary Standard materials preserve exposed basic appearance properties. Advanced shader effects are omitted."
+                    : "Untextured colours identify manifest geometry groups. Unmapped geometry uses a neutral colour.",
+                _previewMaterialMode == PreviewMaterialMode.Original ? HelpBoxMessageType.Warning : HelpBoxMessageType.Info);
+            _previewControls.Add(description);
             if (!active) return;
+            foreach (string warning in _previewSession.MaterialWarnings)
+                _previewControls.Add(new HelpBox(warning, HelpBoxMessageType.Warning));
+            if (_previewMaterialMode == PreviewMaterialMode.Diagnostic)
+            {
+                var legend = new Foldout { text = "Geometry group legend", value = false };
+                foreach (PreviewLegendEntry entry in _previewSession.Legend)
+                {
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Row;
+                    var swatch = new VisualElement();
+                    swatch.style.backgroundColor = entry.Colour;
+                    swatch.style.width = 18; swatch.style.height = 18; swatch.style.marginRight = 6;
+                    row.Add(swatch);
+                    var label = new Label($"{entry.GroupId} | {entry.RendererPath} | source slot {entry.SourceMaterialSlot} | UDIM {entry.Tiles} | output {entry.OutputSubMesh}");
+                    label.AddToClassList("wrap-text");
+                    row.Add(label); legend.Add(row);
+                }
+                _previewControls.Add(legend);
+            }
 
             foreach (FeatureConfiguration feature in _previewSession.Features)
                 _previewControls.Add(CreatePreviewFeatureControl(feature));

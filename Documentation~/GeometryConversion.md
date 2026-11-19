@@ -4,7 +4,7 @@ Version 1.6 adds an Editor-only, non-destructive geometry partitioning pipeline.
 
 ## Workflow
 
-1. Select and scan the avatar in **NVH > UV Tile Scanner**.
+1. Select and scan the avatar in **NVH > UV Tile Scanner > Scanner**.
 2. Expand **YAML geometry conversion** and select **Export template**.
 3. Edit the template. Rename or combine factual groups and add explicit feature ownership/states.
 4. Assign the `.yaml` file in the window.
