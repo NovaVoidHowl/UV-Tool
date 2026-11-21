@@ -7,7 +7,12 @@ ValidationProject*/
 validation-*-create.log
 test-results*.xml
 test-run*.log
+test-results*.xml.meta
+test-run*.log.meta
 *.pdb
 *.user
 .idea/
 .vscode/
+__Local_Files/
+
+build.config.mk.meta
