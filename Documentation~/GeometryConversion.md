@@ -10,9 +10,12 @@ Version 1.6 adds an Editor-only, non-destructive geometry partitioning pipeline.
 4. Assign the `.yaml` file in the window.
 5. Select **Validate** or **Dry run**. Both parse, resolve, and classify without creating assets.
 6. Review renderer, source material slot, group, triangle, output-submesh, unassigned, warning, and error entries.
-7. Select **Convert avatar** after validation succeeds.
+7. Optionally enable **Create persistent fallback-material variant** for destinations that cannot convert the original custom or locked shaders.
+8. Select **Convert avatar** after validation succeeds.
 
-Conversion writes cloned mesh assets, a cloned avatar prefab, and a JSON manifest below `settings.outputDirectory`. Existing filenames are not overwritten: Unity generates unique output paths. The source hierarchy, mesh, materials, animations, imported model, and shaders are never edited.
+Conversion writes cloned mesh assets, an original-material avatar prefab, and a JSON manifest below `settings.outputDirectory`. When the fallback option is enabled it additionally writes a `_Converted_Fallback.prefab` and a uniquely named fallback-material folder. Existing filenames are not overwritten: Unity generates unique output paths. The source hierarchy, mesh, materials, animations, imported model, and shaders are never edited.
+
+The fallback variant uses persistent Built-in Standard materials and never references the preview-only NoRender material or temporary `HideAndDontSave` materials. One fallback asset is created per unique source material and reused across renderer slots. Compatible exposed base colour/texture, normal, metallic, smoothness, emission, and Standard transparency properties use the same conservative translator as preview Fallback mode. Missing or inaccessible appearance data receives diagnostics; custom lighting, matcaps, outlines, packed maps, animated controls, and values removed by shader locking are not reconstructed. All geometry remains present and visible so a destination platform can build its own feature controls.
 
 ## Schema version 1
 
@@ -63,7 +66,7 @@ The output mesh is a clone of the source mesh. Only submesh index lists are repa
 
 ## Manifest
 
-The generated JSON manifest has `manifestVersion: 1`. It records source avatar and mesh asset identifiers where available, output prefab and mesh asset paths/GUIDs, source renderer paths, source material slots, original-to-output submesh mappings, group IDs, triangle counts, unassigned flags, feature ownership, states, defaults, and conversion diagnostics. It contains no Poiyomi-, VRChat-, VRCFury-, or Resonite-specific implementation data.
+The generated JSON manifest has `manifestVersion: 1`. It records source avatar and mesh asset identifiers where available, original and optional fallback prefab paths/GUIDs, fallback material paths, output mesh asset paths/GUIDs, source renderer paths, source material slots, original-to-output submesh mappings, group IDs, triangle counts, unassigned flags, feature ownership, states, defaults, and conversion diagnostics. It contains no Poiyomi-, VRChat-, VRCFury-, or Resonite-specific implementation data.
 
 ## Generated-preview limitation and interactive preview
 

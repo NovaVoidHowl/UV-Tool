@@ -26,6 +26,7 @@ namespace Nvh.UvTileScanner
         [SerializeField] private AnimationPropertyFilter _animationPropertyFilter = AnimationPropertyFilter.UvControls;
         [SerializeField] private string _animationSearch = string.Empty;
         [SerializeField] private TextAsset _conversionConfigurationAsset;
+        [SerializeField] private bool _createFallbackVariant;
         [SerializeField] private GameObject _previewAvatarSource;
         [SerializeField] private TextAsset _previewManifestAsset;
 
@@ -54,6 +55,7 @@ namespace Nvh.UvTileScanner
         private VisualElement _animationResults;
         private VisualElement _results;
         private ObjectField _conversionConfigField;
+        private Toggle _createFallbackVariantToggle;
         private Button _exportYamlButton;
         private Button _validateConfigButton;
         private Button _dryRunButton;
@@ -164,6 +166,7 @@ namespace Nvh.UvTileScanner
             _animationResults = rootVisualElement.Q("animation-results");
             _results = rootVisualElement.Q("results");
             _conversionConfigField = rootVisualElement.Q<ObjectField>("conversion-config-field");
+            _createFallbackVariantToggle = rootVisualElement.Q<Toggle>("create-fallback-variant-toggle");
             _exportYamlButton = rootVisualElement.Q<Button>("export-yaml-button");
             _validateConfigButton = rootVisualElement.Q<Button>("validate-config-button");
             _dryRunButton = rootVisualElement.Q<Button>("dry-run-button");
@@ -236,6 +239,11 @@ namespace Nvh.UvTileScanner
                 InvalidateConversionReport();
                 RefreshConversionControls();
                 RefreshPreviewControls();
+            });
+            _createFallbackVariantToggle.RegisterValueChangedCallback(evt =>
+            {
+                _createFallbackVariant = evt.newValue;
+                RefreshConversionControls();
             });
             _exportYamlButton.clicked += ExportConfigurationTemplate;
             _validateConfigButton.clicked += () => ValidateConfiguration(false);
@@ -312,6 +320,7 @@ namespace Nvh.UvTileScanner
             _animationCategoryFilter.SetValueWithoutNotify(GetAnimationFilterLabel(_animationPropertyFilter));
             _animationSearchField.SetValueWithoutNotify(_animationSearch ?? string.Empty);
             _conversionConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
+            _createFallbackVariantToggle.SetValueWithoutNotify(_createFallbackVariant);
             _previewAvatarField.SetValueWithoutNotify(_previewAvatarSource);
             _previewConfigField.SetValueWithoutNotify(_conversionConfigurationAsset);
             _previewManifestField.SetValueWithoutNotify(_previewManifestAsset);
@@ -1484,12 +1493,15 @@ namespace Nvh.UvTileScanner
                 RefreshConversionControls();
                 return;
             }
-            _conversionReport = GeometryConversionOutput.Convert(_avatarRoot, parsed.Configuration, _report);
+            _conversionReport = GeometryConversionOutput.Convert(_avatarRoot, parsed.Configuration, _report,
+                _createFallbackVariant);
             _conversionDiagnostics.AddRange(_conversionReport.Diagnostics);
             RefreshConversionControls();
             if (_conversionReport.HasErrors)
                 return;
-            UnityEngine.Object prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_conversionReport.OutputPrefabPath);
+            string preferredPrefabPath = !string.IsNullOrEmpty(_conversionReport.FallbackPrefabPath)
+                ? _conversionReport.FallbackPrefabPath : _conversionReport.OutputPrefabPath;
+            UnityEngine.Object prefab = AssetDatabase.LoadAssetAtPath<GameObject>(preferredPrefabPath);
             _previewAvatarSource = prefab as GameObject;
             _previewManifestAsset = AssetDatabase.LoadAssetAtPath<TextAsset>(_conversionReport.ManifestPath);
             _previewAvatarField.SetValueWithoutNotify(_previewAvatarSource);
@@ -1497,7 +1509,9 @@ namespace Nvh.UvTileScanner
             RefreshPreviewControls();
             Selection.activeObject = prefab;
             EditorGUIUtility.PingObject(prefab);
-            ShowNotification(new GUIContent("Converted prefab and manifest created."));
+            ShowNotification(new GUIContent(string.IsNullOrEmpty(_conversionReport.FallbackPrefabPath)
+                ? "Converted prefab and manifest created."
+                : "Original and fallback-material prefabs created."));
         }
 
         private void InvalidateConversionReport()
@@ -1536,9 +1550,19 @@ namespace Nvh.UvTileScanner
                       $"{_conversionReport.UnassignedTriangleCount} unassigned triangle(s).";
                 AddConversionMessage(summary, _conversionReport.HasErrors
                     ? ConversionDiagnosticSeverity.Error : ConversionDiagnosticSeverity.Info);
+                if (!_conversionReport.HasErrors && string.IsNullOrEmpty(_conversionReport.OutputPrefabPath) &&
+                    _createFallbackVariant)
+                    AddConversionMessage("Conversion will also create a separate persistent fallback-material prefab.",
+                        ConversionDiagnosticSeverity.Info);
                 if (!string.IsNullOrEmpty(_conversionReport.OutputPrefabPath))
                     AddConversionMessage("Created " + _conversionReport.OutputPrefabPath +
                                          " and " + _conversionReport.ManifestPath,
+                        ConversionDiagnosticSeverity.Info);
+                if (!string.IsNullOrEmpty(_conversionReport.FallbackPrefabPath))
+                    AddConversionMessage("Created upload fallback variant " +
+                                         _conversionReport.FallbackPrefabPath + " with " +
+                                         _conversionReport.GeneratedFallbackMaterialPaths.Count +
+                                         " persistent Standard material asset(s).",
                         ConversionDiagnosticSeverity.Info);
                 foreach (RendererConversionPlan renderer in _conversionReport.Renderers)
                 {

@@ -50,6 +50,8 @@ Locked shaders expose only what remains in their shader property table. Missing/
 
 Generated materials use `HideAndDontSave`, never AssetDatabase writes. The session releases them on End Preview, failed startup/mode changes, window disable, assembly reload and Editor quit. A new session instantiates a fresh clone. No source/prefab materials or mesh assets are changed. Original restores remain available as an explicit debugging action on the disposable instance.
 
+Preview Fallback mode is still disposable and should not be uploaded or saved. To create an importable asset, enable **Create persistent fallback-material variant** in the YAML geometry conversion panel. That separate conversion output writes Standard material assets and a `_Converted_Fallback.prefab`, contains no NoRender material, and leaves every geometry group present for destination-side feature setup.
+
 ### Validation in this checkout
 
 Synthetic Edit Mode tests cover all three modes, shared sources, deterministic colours, conservative/missing shader properties, null materials, Standard appearance and cutout translation, remapped manifest ordering, toggles and exclusive states, unowned geometry, mode/state persistence, reuse, explicit/window cleanup and prefab/mesh/source non-mutation. Assembly-reload cleanup uses the same tested EndPreview method; an actual domain reload and visual appearance require Unity validation.

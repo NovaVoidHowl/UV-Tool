@@ -198,8 +198,10 @@ namespace Nvh.UvTileScanner.Conversion
         public IReadOnlyList<RendererConversionPlan> Renderers { get; }
         public IReadOnlyList<ConversionDiagnostic> Diagnostics { get; }
         public string OutputPrefabPath { get; internal set; }
+        public string FallbackPrefabPath { get; internal set; }
         public string ManifestPath { get; internal set; }
         public IReadOnlyList<string> GeneratedMeshPaths { get; internal set; } = Array.Empty<string>();
+        public IReadOnlyList<string> GeneratedFallbackMaterialPaths { get; internal set; } = Array.Empty<string>();
         public bool HasErrors
         {
             get

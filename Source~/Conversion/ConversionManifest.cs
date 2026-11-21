@@ -15,6 +15,9 @@ namespace Nvh.UvTileScanner.Conversion
         public string sourceAvatarGuid;
         public string outputPrefabAssetPath;
         public string outputPrefabGuid;
+        public string fallbackPrefabAssetPath;
+        public string fallbackPrefabGuid;
+        public string[] fallbackMaterialAssetPaths = Array.Empty<string>();
         public ManifestRenderer[] renderers = Array.Empty<ManifestRenderer>();
         public ManifestFeature[] features = Array.Empty<ManifestFeature>();
         public ManifestDiagnostic[] diagnostics = Array.Empty<ManifestDiagnostic>();

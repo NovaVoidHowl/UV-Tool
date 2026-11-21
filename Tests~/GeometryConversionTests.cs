@@ -294,10 +294,82 @@ namespace Nvh.UvTileScanner.Tests
             StringAssert.Contains("\"geometryGroup\": \"tile-a\"", manifest);
             StringAssert.Contains("\"defaultState\": \"a\"", manifest);
             Assert.That(AssetDatabase.AssetPathToGUID(output.OutputPrefabPath), Is.Not.Empty);
+            Assert.That(output.FallbackPrefabPath, Is.Null.Or.Empty);
+            Assert.That(output.GeneratedFallbackMaterialPaths, Is.Empty);
 
             ManifestParseResult parsedManifest = GeometryConversionManifestJson.Parse(manifest);
             Assert.That(parsedManifest.Success, Is.True, JoinDiagnostics(parsedManifest.Diagnostics));
             Assert.That(parsedManifest.Manifest.renderers.Single().subMeshMappings, Has.Length.EqualTo(2));
+        }
+
+        [Test]
+        public void Conversion_OptionalFallbackVariantCreatesPersistentSharedStandardMaterials()
+        {
+            MeshRenderer sourceRenderer = CreateStaticAvatar(MakeSharedBoundaryMesh());
+            Object.DestroyImmediate(_material);
+            _material = null;
+
+            string rootFolder = "Assets/EditorTests/FallbackConversion_" + Guid.NewGuid().ToString("N");
+            _generatedFolders.Add(rootFolder);
+            Assert.That(AssetDatabase.CreateFolder("Assets/EditorTests",
+                rootFolder.Substring(rootFolder.LastIndexOf('/') + 1)), Is.Not.Empty);
+            var sourceMaterial = new Material(Shader.Find("Standard"))
+            {
+                name = "Locked Source",
+                color = new Color(.2f, .4f, .6f, .8f)
+            };
+            sourceMaterial.SetFloat("_Metallic", .35f);
+            sourceMaterial.SetFloat("_Glossiness", .6f);
+            string sourceMaterialPath = rootFolder + "/Locked Source.mat";
+            AssetDatabase.CreateAsset(sourceMaterial, sourceMaterialPath);
+            _previewMaterials.Add(sourceMaterial);
+            sourceRenderer.sharedMaterial = sourceMaterial;
+
+            AvatarGeometryConfiguration configuration = MakeConfiguration(includeSecondTile: true);
+            configuration.Settings.OutputDirectory = rootFolder + "/Output";
+            GeometryConversionReport output = GeometryConversionOutput.Convert(
+                _root, configuration, null, true);
+
+            Assert.That(output.HasErrors, Is.False, JoinDiagnostics(output.Diagnostics));
+            Assert.That(output.FallbackPrefabPath, Is.Not.Null.And.Not.Empty);
+            Assert.That(output.FallbackPrefabPath, Is.Not.EqualTo(output.OutputPrefabPath));
+            Assert.That(output.GeneratedFallbackMaterialPaths, Has.Count.EqualTo(1),
+                "Repeated output submeshes using one source material should share one persistent fallback asset.");
+
+            GameObject originalPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(output.OutputPrefabPath);
+            GameObject fallbackPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(output.FallbackPrefabPath);
+            Assert.That(originalPrefab, Is.Not.Null);
+            Assert.That(fallbackPrefab, Is.Not.Null);
+            Material[] originalMaterials = originalPrefab.transform.Find("Body")
+                .GetComponent<MeshRenderer>().sharedMaterials;
+            Material[] fallbackMaterials = fallbackPrefab.transform.Find("Body")
+                .GetComponent<MeshRenderer>().sharedMaterials;
+            Assert.That(originalMaterials.All(material => material == sourceMaterial), Is.True);
+            Assert.That(fallbackMaterials, Has.Length.EqualTo(2));
+            Assert.That(fallbackMaterials[0], Is.SameAs(fallbackMaterials[1]));
+            Assert.That(fallbackMaterials[0], Is.Not.SameAs(sourceMaterial));
+            Assert.That(fallbackMaterials[0].shader.name, Is.EqualTo("Standard"));
+            Assert.That(fallbackMaterials[0].color, Is.EqualTo(sourceMaterial.color));
+            Assert.That(fallbackMaterials[0].hideFlags, Is.EqualTo(HideFlags.None));
+            Assert.That(AssetDatabase.GetAssetPath(fallbackMaterials[0]),
+                Is.EqualTo(output.GeneratedFallbackMaterialPaths.Single()));
+            Assert.That(fallbackMaterials[0].name,
+                Is.EqualTo(Path.GetFileNameWithoutExtension(output.GeneratedFallbackMaterialPaths.Single())));
+            Assert.That(fallbackPrefab.GetComponentsInChildren<Renderer>(true)
+                .SelectMany(renderer => renderer.sharedMaterials)
+                .Any(material => material != null && material.shader != null &&
+                                 material.shader.name == "Hidden/NVH/UVTileScanner/NoRender"), Is.False);
+
+            ManifestParseResult manifest = GeometryConversionManifestJson.Parse(
+                File.ReadAllText(ToAbsolutePath(output.ManifestPath)));
+            Assert.That(manifest.Success, Is.True, JoinDiagnostics(manifest.Diagnostics));
+            Assert.That(manifest.Manifest.fallbackPrefabAssetPath, Is.EqualTo(output.FallbackPrefabPath));
+            Assert.That(manifest.Manifest.fallbackPrefabGuid,
+                Is.EqualTo(AssetDatabase.AssetPathToGUID(output.FallbackPrefabPath)));
+            CollectionAssert.AreEqual(output.GeneratedFallbackMaterialPaths,
+                manifest.Manifest.fallbackMaterialAssetPaths);
+            Assert.That(sourceMaterial.color, Is.EqualTo(new Color(.2f, .4f, .6f, .8f)),
+                "Fallback generation must not modify the source material asset.");
         }
 
         [Test]

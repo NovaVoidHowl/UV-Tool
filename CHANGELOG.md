@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.2 - 2026-11-21 - (plan H - Imp A)
+
+- Added a conversion-time toggle that creates a separate persistent fallback-material prefab alongside the original-material prefab.
+- Reused the conservative preview fallback translation for persistent Built-in Standard material assets, including shared-source reuse and translation diagnostics.
+- Recorded fallback prefab/material paths in the conversion report and manifest, while keeping NoRender and temporary preview materials out of the upload variant.
+- Added Edit Mode coverage for opt-in generation, persistent material naming, reuse, appearance mapping, manifest data, and source non-mutation.
+
 ## 1.8.0 - 2026-11-19 - (plan H - Imp A)
 
 - Fixed fallback emission initialization: preserve source GI flags and synchronize `_EMISSION` with Standard validation before assignment, avoiding bright emission that changed after unrelated imports.

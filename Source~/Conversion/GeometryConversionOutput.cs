@@ -11,7 +11,8 @@ namespace Nvh.UvTileScanner.Conversion
         public const int ManifestVersion = 1;
 
         public static GeometryConversionReport Convert(GameObject avatarRoot,
-            AvatarGeometryConfiguration configuration, Nvh.UvTileScanner.AvatarUvScanReport scanReport = null)
+            AvatarGeometryConfiguration configuration, Nvh.UvTileScanner.AvatarUvScanReport scanReport = null,
+            bool createFallbackMaterialVariant = false)
         {
             GeometryConversionReport planned = GeometryConversionPlanner.ValidateAndPlan(
                 avatarRoot, configuration, scanReport);
@@ -20,6 +21,8 @@ namespace Nvh.UvTileScanner.Conversion
             var diagnostics = new List<ConversionDiagnostic>(planned.Diagnostics);
             var createdAssets = new List<string>();
             var meshPaths = new List<string>();
+            var fallbackMaterialPaths = new List<string>();
+            string fallbackPrefabPath = null;
             GameObject avatarCopy = null;
             try
             {
@@ -50,8 +53,12 @@ namespace Nvh.UvTileScanner.Conversion
                 createdAssets.Add(prefabPath);
                 AssetDatabase.SaveAssets();
 
+                if (createFallbackMaterialVariant)
+                    fallbackPrefabPath = CreateFallbackVariant(avatarCopy, configuration, outputDirectory,
+                        createdAssets, fallbackMaterialPaths, diagnostics);
+
                 GeometryConversionManifest manifest = BuildManifest(configuration, avatarRoot, prefabPath,
-                    manifestRenderers, diagnostics);
+                    fallbackPrefabPath, fallbackMaterialPaths, manifestRenderers, diagnostics);
                 string manifestPath = AssetDatabase.GenerateUniqueAssetPath(
                     outputDirectory + "/" + SanitizeName(configuration.Avatar.Name) + "_ConversionManifest.json");
                 string projectRoot = Directory.GetParent(Application.dataPath).FullName;
@@ -60,10 +67,16 @@ namespace Nvh.UvTileScanner.Conversion
                 AssetDatabase.ImportAsset(manifestPath, ImportAssetOptions.ForceSynchronousImport);
                 createdAssets.Add(manifestPath);
 
-                planned.OutputPrefabPath = prefabPath;
-                planned.ManifestPath = manifestPath;
-                planned.GeneratedMeshPaths = meshPaths.AsReadOnly();
-                return planned;
+                var output = new GeometryConversionReport(configuration,
+                    new List<RendererConversionPlan>(planned.Renderers), diagnostics)
+                {
+                    OutputPrefabPath = prefabPath,
+                    FallbackPrefabPath = fallbackPrefabPath,
+                    ManifestPath = manifestPath,
+                    GeneratedMeshPaths = meshPaths.AsReadOnly(),
+                    GeneratedFallbackMaterialPaths = fallbackMaterialPaths.AsReadOnly()
+                };
+                return output;
             }
             catch (Exception exception)
             {
@@ -160,7 +173,8 @@ namespace Nvh.UvTileScanner.Conversion
         }
 
         private static GeometryConversionManifest BuildManifest(AvatarGeometryConfiguration configuration,
-            GameObject sourceRoot, string prefabPath, List<ManifestRenderer> renderers,
+            GameObject sourceRoot, string prefabPath, string fallbackPrefabPath,
+            List<string> fallbackMaterialPaths, List<ManifestRenderer> renderers,
             List<ConversionDiagnostic> diagnostics)
         {
             var features = new List<ManifestFeature>();
@@ -201,10 +215,92 @@ namespace Nvh.UvTileScanner.Conversion
                 sourceAvatarGuid = string.IsNullOrEmpty(sourcePath) ? string.Empty : AssetDatabase.AssetPathToGUID(sourcePath),
                 outputPrefabAssetPath = prefabPath,
                 outputPrefabGuid = AssetDatabase.AssetPathToGUID(prefabPath),
+                fallbackPrefabAssetPath = fallbackPrefabPath ?? string.Empty,
+                fallbackPrefabGuid = string.IsNullOrEmpty(fallbackPrefabPath)
+                    ? string.Empty : AssetDatabase.AssetPathToGUID(fallbackPrefabPath),
+                fallbackMaterialAssetPaths = fallbackMaterialPaths.ToArray(),
                 renderers = renderers.ToArray(),
                 features = features.ToArray(),
                 diagnostics = manifestDiagnostics.ToArray()
             };
+        }
+
+        private static string CreateFallbackVariant(GameObject avatarCopy,
+            AvatarGeometryConfiguration configuration, string outputDirectory,
+            List<string> createdAssets, List<string> materialPaths,
+            List<ConversionDiagnostic> diagnostics)
+        {
+            string avatarName = SanitizeName(configuration.Avatar.Name);
+            string materialFolder = AssetDatabase.GenerateUniqueAssetPath(
+                outputDirectory + "/" + avatarName + "_FallbackMaterials");
+            string folderGuid = AssetDatabase.CreateFolder(outputDirectory, Path.GetFileName(materialFolder));
+            if (string.IsNullOrEmpty(folderGuid))
+                throw new InvalidOperationException("Unity could not create fallback material folder '" +
+                                                    materialFolder + "'.");
+            createdAssets.Add(materialFolder);
+
+            var persistentBySource = new Dictionary<Material, Material>();
+            Material missingSource = null;
+            using (var cache = new PreviewMaterialCache())
+            {
+                foreach (Renderer renderer in avatarCopy.GetComponentsInChildren<Renderer>(true))
+                {
+                    Material[] originals = renderer.sharedMaterials;
+                    var fallbacks = new Material[originals.Length];
+                    for (int slot = 0; slot < originals.Length; slot++)
+                    {
+                        Material source = originals[slot];
+                        Material persistent;
+                        if (source == null)
+                        {
+                            if (missingSource == null)
+                                missingSource = CreatePersistentFallback(cache.Fallback(null),
+                                    "Missing_Source_Fallback", materialFolder, createdAssets, materialPaths);
+                            persistent = missingSource;
+                        }
+                        else if (!persistentBySource.TryGetValue(source, out persistent))
+                        {
+                            persistent = CreatePersistentFallback(cache.Fallback(source),
+                                SanitizeName(source.name) + "_Fallback", materialFolder,
+                                createdAssets, materialPaths);
+                            persistentBySource.Add(source, persistent);
+                        }
+                        fallbacks[slot] = persistent;
+                    }
+                    renderer.sharedMaterials = fallbacks;
+                }
+
+                foreach (string warning in cache.Warnings)
+                    diagnostics.Add(new ConversionDiagnostic(ConversionDiagnosticSeverity.Warning,
+                        "FALLBACK_TRANSLATION_LIMITATION", warning));
+            }
+
+            avatarCopy.name = avatarName + "_Converted_Fallback";
+            string prefabPath = AssetDatabase.GenerateUniqueAssetPath(
+                outputDirectory + "/" + avatarName + "_Converted_Fallback.prefab");
+            GameObject saved = PrefabUtility.SaveAsPrefabAsset(avatarCopy, prefabPath);
+            if (saved == null)
+                throw new InvalidOperationException("Unity could not save the fallback avatar prefab at '" +
+                                                    prefabPath + "'.");
+            createdAssets.Add(prefabPath);
+            AssetDatabase.SaveAssets();
+            return prefabPath;
+        }
+
+        private static Material CreatePersistentFallback(Material temporary, string preferredName,
+            string materialFolder, List<string> createdAssets, List<string> materialPaths)
+        {
+            string path = AssetDatabase.GenerateUniqueAssetPath(
+                materialFolder + "/" + preferredName + ".mat");
+            var persistent = new Material(temporary)
+            {
+                name = Path.GetFileNameWithoutExtension(path),
+                hideFlags = HideFlags.None
+            };
+            AssetDatabase.CreateAsset(persistent, path);
+            createdAssets.Add(path);
+            materialPaths.Add(path);
+            return persistent;
         }
 
         private static void EnsureAssetFolder(string path)

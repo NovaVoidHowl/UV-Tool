@@ -149,6 +149,7 @@ namespace Nvh.UvTileScanner.Tests
                 Assert.That(window.rootVisualElement.Q("animation-results"), Is.Not.Null);
                 Assert.That(window.rootVisualElement.Q<Button>("scan-button"), Is.Not.Null);
                 Assert.That(window.rootVisualElement.Q<ProgressBar>("scan-progress-bar"), Is.Not.Null);
+                Assert.That(window.rootVisualElement.Q<Toggle>("create-fallback-variant-toggle"), Is.Not.Null);
                 Button cancelButton = window.rootVisualElement.Q<Button>("cancel-scan-button");
                 Assert.That(cancelButton, Is.Not.Null);
                 Assert.That(cancelButton.text, Is.EqualTo("Cancel scan"));

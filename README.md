@@ -27,6 +27,7 @@ The window uses UI Toolkit and is distributed as four compiled editor DLLs, the 
 - Dry-runs expected renderer/group/material mappings and triangle/submesh counts without creating assets.
 - Clones meshes and repartitions only their submesh index lists, retaining source vertex attributes, shared vertices, skinning, blendshapes, bounds, winding, and material provenance.
 - Creates a cloned avatar prefab, new mesh assets, and a versioned JSON manifest without modifying source assets.
+- Optionally creates a separate persistent Built-in Standard fallback-material prefab for import workflows that cannot consume the original custom or locked shaders.
 - Loads converted avatars plus YAML/manifest definitions into a disposable feature preview with toggle and exclusive-state controls.
 - Recomputes complete renderer material arrays from preserved originals and substitutes only hidden mapped groups with a packaged NoRender material.
 - Provides reset-to-defaults, restore-all-materials, and explicit end-preview cleanup actions.
@@ -97,7 +98,8 @@ After scanning, expand **YAML geometry conversion**:
 1. Select **Export template** and save a new `.yaml` asset. Existing files require explicit replacement confirmation.
 2. Review the factual renderer/material-slot/UV/tile groups. Give them deliberate IDs and define feature ownership/states; the exporter never derives meanings from names, shaders, or animations.
 3. Assign the YAML asset, then select **Validate** or **Dry run**. Both are read-only and show renderer/material mappings, group triangle counts, unassigned triangles, boundary diagnostics, and expected output submeshes.
-4. Select **Convert avatar** only after validation passes. Conversion creates uniquely named cloned meshes, a prefab, and a JSON manifest below `settings.outputDirectory` and pings the prefab.
+4. Enable **Create persistent fallback-material variant** when the destination importer cannot consume the original custom or locked shaders.
+5. Select **Convert avatar** only after validation passes. Conversion always creates the original-material prefab, uniquely named cloned meshes, and a JSON manifest below `settings.outputDirectory`. When enabled, it also creates and pings a separate `_Converted_Fallback.prefab` plus persistent Standard material assets.
 
 The schema uses zero-based Unity UV channels and standard UDIM mapping. Triangle classification considers all three corners, preserves shared vertices and material boundaries, and never silently deletes or duplicates source triangles. Unsupported topology, negative/out-of-range tiles, overlapping groups, conflicting feature ownership, invalid slots, and unsafe YAML are errors. Unmatched or boundary-ambiguous triangles follow the explicit YAML policies.
 
@@ -295,13 +297,14 @@ The build intentionally references Unity's managed facade assemblies to retain c
 - cloned mesh skinning/blendshape/bounds preservation, non-destructive prefab output, manifest mappings, template export, detector independence, and scanner-report integration.
 - feature toggle/exclusive-state switching, multi-group ownership, complete material restoration, cleanup, NoRender configuration, and prefab/mesh/material non-mutation.
 
-The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 68 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
+The latest Unity 2022.3.58f1 compile succeeds and its Edit Mode run passes all 69 tests. The four projects retain the established `netstandard2.1`/Unity 2021.3-compatible structure, but this release was not independently rerun in a Unity 2021.3 Editor.
 
 To run the suite with the checked-out validation project, use `make test` as described above. To run the tests in another project manually, copy `Tests~` into that project's `Assets` directory or temporarily remove the trailing `~` so Unity imports the test assembly and fixtures.
 
 ## Current limitations
 
 - Geometry conversion partitions meshes and emits a neutral manifest; it does not generate Resonite components, ProtoFlux, platform shaders, or publish avatars.
+- Persistent fallback variants conservatively copy compatible exposed properties into Standard materials. They do not reproduce custom lighting, matcaps, outlines, packed maps, animated shader controls, or baked properties removed by shader locking.
 - Schema v1 does not create separate toggleable renderers. `generatePreview: true` still produces a warning; interactive preview instead substitutes materials on a disposable converted-avatar clone.
 - NoRender preview supports only the Built-in Render Pipeline. Unsupported or missing source-material shaders are reported but can still have their slot reference hidden/restored. Custom replacement shaders, command buffers, selection outlines, or other render overrides may still process or visualise geometry; URP/HDRP preview is rejected.
 - Only triangle submesh topology is converted. Other topology is rejected rather than rewritten.

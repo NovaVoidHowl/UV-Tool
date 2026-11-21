@@ -56,6 +56,9 @@
                 <ui:Label text="Export a factual template from this scan, then review and assign semantic feature ownership in YAML before converting."
                           class="wrap-text conversion-description" />
                 <uie:ObjectField name="conversion-config-field" label="YAML configuration" />
+                <ui:Toggle name="create-fallback-variant-toggle"
+                           label="Create persistent fallback-material variant"
+                           tooltip="Also creates a separate upload-oriented prefab using persistent Built-in Standard fallback materials. The original-material prefab is retained." />
                 <ui:VisualElement class="conversion-button-row">
                     <ui:Button name="export-yaml-button" text="Export template" />
                     <ui:Button name="validate-config-button" text="Validate" />
